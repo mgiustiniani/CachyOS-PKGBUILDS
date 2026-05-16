@@ -2,13 +2,13 @@
 # Maintainer: Vladislav Nepogodin <nepogodin.vlad@gmail.com>
 # Contributor: Philip Müller <philm[at]manjaro[dog]org>
 
-pkgname=cachyos-calamares-next
+pkgname=synapse-calamares-next
 pkgver=3.4.1
 pkgrel=1
 pkgdesc='Distribution-independent installer framework'
 arch=('x86_64')
 license=(GPL-3.0-or-later)
-url="https://github.com/CachyOS/cachyos-calamares"
+url="https://github.com/mgiustiniani/cachyos-calamares"
 conflicts=('calamares')
 provides=('calamares')
 depends=(
