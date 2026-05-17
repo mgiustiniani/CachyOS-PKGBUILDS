@@ -54,7 +54,7 @@ makedepends=(
 )
 sha256sums=('SKIP')
 # Bootloader
-source=(calamares::"git+${url}.git#branch=cachyos")
+source=(calamares::"git+${url}.git#branch=cachyos-ai-integration")
 options=('!emptydirs')
 
 prepare() {
