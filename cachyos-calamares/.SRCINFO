@@ -48,4 +48,4 @@ pkgbase = synapse-calamares
 	source = calamares::git+https://github.com/CachyOS/cachyos-calamares.git#branch=cachyos
 	sha256sums = SKIP
 
-pkgname = cachyos-calamares-next
+pkgname = synapse-calamares
