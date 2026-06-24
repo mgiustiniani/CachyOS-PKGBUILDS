@@ -45,6 +45,7 @@ package() {
     install -m 644 ec_su_axb35.ko "$pkgdir/lib/modules/$(uname -r)/updates/"
 
     # Install monitor script from upstream
+    install -d "$pkgdir/usr/local/bin/"
     install -m 755 scripts/su_axb35_monitor "$pkgdir/usr/local/bin/"
 
     # Install our custom scripts
