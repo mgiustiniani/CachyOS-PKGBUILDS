@@ -40,12 +40,16 @@ build() {
 package() {
     cd "$srcdir/ec_su_axb35-linux"
 
+    # Create required directories
+    mkdir -p "$pkgdir/usr/local/bin"
+    mkdir -p "$pkgdir/usr/lib/systemd/system"
+    mkdir -p "$pkgdir/etc/modules-load.d"
+    mkdir -p "$pkgdir/lib/modules/$(uname -r)/updates"
+
     # Install kernel module
-    install -d "$pkgdir/lib/modules/$(uname -r)/updates/"
     install -m 644 ec_su_axb35.ko "$pkgdir/lib/modules/$(uname -r)/updates/"
 
     # Install monitor script from upstream
-    install -d "$pkgdir/usr/local/bin/"
     install -m 755 scripts/su_axb35_monitor "$pkgdir/usr/local/bin/"
 
     # Install our custom scripts
@@ -54,10 +58,8 @@ package() {
     install -m 755 "$srcdir/test_fan_mode_fixed.sh" "$pkgdir/usr/local/bin/"
 
     # Install systemd service
-    install -d "$pkgdir/usr/lib/systemd/system/"
     install -m 644 "$srcdir/axb35-fan-control.service" "$pkgdir/usr/lib/systemd/system/"
 
     # Auto-load module config
-    install -d "$pkgdir/etc/modules-load.d/"
     echo "ec_su_axb35" > "$pkgdir/etc/modules-load.d/ec_su_axb35.conf"
 }
