@@ -16,13 +16,16 @@ source=('ec_su_axb35-linux::git+https://github.com/cmetz/ec-su_axb35-linux.git'
         'axb35-fan-control.service'
         'su_axb35_monitor'
         'info.sh'
-        'test_fan_mode_fixed.sh')
+        'test_fan_mode_fixed.sh'
+        'synapse-ec-su-axb35-linux.install')
+install=synapse-ec-su-axb35-linux.install
 sha256sums=('SKIP'
             '5f13b06b667e89ec6d5b902585209a5d8316be30856861f9942eff18c19a4233'
             '485015a26ffd969f1bc4992a85480939d29dd2df0db90624c11ee7a467305a75'
             '942d76d9883ab4a222f99f97904e69af0c34c3c737a7b90e790e635fac930456'
             'cf05da64dc82e10239596122234955d6b259666dcc1c8d76b0fc9b25d9535311'
-            'df3e8ecbc1969b7d0538034af695b62b0cad52278c4650f61c312e284d64f9a0')
+            'df3e8ecbc1969b7d0538034af695b62b0cad52278c4650f61c312e284d64f9a0'
+            '2afcec89c0bed776271376ad959d03590253929022b38be08ef316023d96bfb4')
 
 prepare() {
     cd "$srcdir"

@@ -1,0 +1,25 @@
+post_install() {
+    # Apply fan curves and power mode immediately after install
+    echo "synapse-ec-su-axb35-linux: Applying fan curves and power mode..."
+    
+    if [ -d /sys/class/ec_su_axb35 ]; then
+        for fan in fan1 fan2 fan3; do
+            echo curve > "/sys/class/ec_su_axb35/$fan/mode"
+            echo "60,70,83,95,97" > "/sys/class/ec_su_axb35/$fan/rampup_curve"
+            echo "40,50,80,94,96" > "/sys/class/ec_su_axb35/$fan/rampdown_curve"
+        done
+        echo balanced > /sys/class/ec_su_axb35/apu/power_mode
+        echo "synapse-ec-su-axb35-linux: Fan curves and power mode applied."
+    else
+        echo "synapse-ec-su-axb35-linux: WARNING - Driver not loaded. Curves will be applied at boot via systemd."
+    fi
+    
+    # Load module if not already loaded
+    if ! lsmod | grep -q ec_su_axb35; then
+        modprobe ec_su_axb35 2>/dev/null || true
+    fi
+}
+
+post_upgrade() {
+    post_install
+}
