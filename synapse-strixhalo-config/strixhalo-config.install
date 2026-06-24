@@ -1,0 +1,13 @@
+post_install() {
+    # Ensure modprobe parameters are loaded on next boot
+    echo "Strix Halo config installed - reboot to apply kernel parameters"
+    echo "  amd_iommu=off, amdgpu.gttsize=131072, ttm.pages_limit=31457280"
+}
+
+post_upgrade() {
+    post_install
+}
+
+post_remove() {
+    echo "Strix Halo config removed - kernel parameters will no longer be applied"
+}

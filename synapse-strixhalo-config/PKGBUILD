@@ -1,0 +1,17 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+
+pkgname=synapse-strixhalo-config
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Kernel module parameters configuration for AMD Strix Halo (iommu, gttsize, ttm pages limit)'
+arch=('x86_64')
+license=(GPL-3.0-or-later)
+url="https://github.com/mgiustiniani/CachyOS-PKGBUILDS"
+install=strixhalo-config.install
+source=(strixhalo.conf)
+sha256sums=('SKIP')
+
+package() {
+    install -dm755 "$pkgdir/etc/modprobe.d"
+    install -Dm644 "$srcdir/strixhalo.conf" "$pkgdir/etc/modprobe.d/strixhalo.conf"
+}
