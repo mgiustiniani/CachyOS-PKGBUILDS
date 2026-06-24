@@ -1,12 +1,13 @@
 pkgbase = cachy-update
 	pkgdesc = An update notifier & applier that assists you with important pre / post update tasks
-	pkgver = 3.19.4
+	pkgver = 3.20.2
 	pkgrel = 1
 	url = https://github.com/CachyOS/cachy-update
 	arch = any
 	license = GPL-3.0-or-later
 	checkdepends = bats
 	makedepends = scdoc
+	makedepends = git
 	depends = bash
 	depends = systemd
 	depends = pacman
@@ -14,6 +15,7 @@ pkgbase = cachy-update
 	depends = archlinux-contrib
 	depends = curl
 	depends = fakeroot
+	depends = util-linux
 	depends = htmlq
 	depends = diffutils
 	depends = hicolor-icon-theme
@@ -34,7 +36,7 @@ pkgbase = cachy-update
 	optdepends = sudo-rs: Privilege elevation
 	optdepends = opendoas: Privilege elavation
 	conflicts = arch-update
-	source = git+https://github.com/CachyOS/cachy-update#commit=0d968bbcb7265254613fd036a37689c8c7acc938
-	sha256sums = 90ceab095c49bd804761669cc51459d551762af6b5fac5953ed87d61aeb7aa1c
+	source = git+https://github.com/CachyOS/cachy-update#commit=62389486ad4c11aed8c2d349a5916928d45f8503
+	sha256sums = 476925eabe76af7360fc3a15213d66bc7d6ced5402d6a3f4a0cca5a7b07d8d2a
 
 pkgname = cachy-update

@@ -1,6 +1,6 @@
 pkgbase = linux-firmware
 	pkgdesc = Firmware files for Linux
-	pkgver = 20260410
+	pkgver = 20260622
 	pkgrel = 1
 	epoch = 1
 	url = https://gitlab.com/kernel-firmware/linux-firmware
@@ -12,9 +12,9 @@ pkgbase = linux-firmware
 	makedepends = rdfind
 	options = !debug
 	options = !strip
-	source = git+https://gitlab.com/kernel-firmware/linux-firmware.git?signed#tag=20260410
+	source = git+https://gitlab.com/kernel-firmware/linux-firmware.git?signed#tag=20260622
 	validpgpkeys = 4CDE8575E547BF835FE15807A31B6BD72486CFD6
-	b2sums = 373c42eabe359a83c0c7a22342468708a0a78ecd984ab9b4a7893b7fc76cb813be0a7ada1197aaf441cb59db218b353b68fe19a2d2d04de0e389d3386f01db87
+	b2sums = 272122f3b49da2b2c335a60db97797c5c38c13b82e32cb42313d13307df792af59fa33239c1a5c709ec1f4d96863514f4e75f733aa06a3f98d0c713532ef95f9
 
 pkgname = linux-firmware
 	pkgdesc = Firmware files for Linux - Default set
