@@ -34,3 +34,6 @@ _deps
 *-prefix/
 glibc/glibc
 # End of https://www.toptal.com/developers/gitignore/api/cmake,archlinuxpackages
+synapse-ec-su-axb35-linux/src/
+synapse-ec-su-axb35-linux/ec_su_axb35-linux/
+*.pkg.tar.zst
