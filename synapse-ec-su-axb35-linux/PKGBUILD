@@ -1,0 +1,59 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+
+pkgname=synapse-ec-su-axb35-linux
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Fan and power control for AMD Strix Halo AXB35 MiniPCs (kernel module ec_su_axb35)'
+arch=('x86_64')
+license=('GPL-3.0-or-later')
+url='https://github.com/cmetz/ec-su_axb35-linux'
+depends=('gcc' 'make' 'linux-headers' 'clang' 'llvm')
+makedepends=('git')
+provides=('ec-su_axb35-linux')
+conflicts=('ec-su_axb35-linux')
+source=('ec_su_axb35-linux::git+https://github.com/cmetz/ec-su_axb35-linux.git'
+        'axb35-apply-settings'
+        'axb35-fan-control.service'
+        'su_axb35_monitor'
+        'info.sh'
+        'test_fan_mode_fixed.sh')
+sha256sums=('SKIP'
+            '5f13b06b667e89ec6d5b902585209a5d8316be30856861f9942eff18c19a4233'
+            '485015a26ffd969f1bc4992a85480939d29dd2df0db90624c11ee7a467305a75'
+            '942d76d9883ab4a222f99f97904e69af0c34c3c737a7b90e790e635fac930456'
+            'cf05da64dc82e10239596122234955d6b259666dcc1c8d76b0fc9b25d9535311'
+            'df3e8ecbc1969b7d0538034af695b62b0cad52278c4650f61c312e284d64f9a0')
+
+prepare() {
+    cd "$srcdir"
+    echo "Preparing to build ec_su_axb35 kernel module..."
+}
+
+build() {
+    cd "$srcdir/ec_su_axb35-linux"
+    make CC=clang LD=ld.lld
+}
+
+package() {
+    cd "$srcdir/ec_su_axb35-linux"
+
+    # Install kernel module
+    install -d "$pkgdir/lib/modules/$(uname -r)/updates/"
+    install -m 644 ec_su_axb35.ko "$pkgdir/lib/modules/$(uname -r)/updates/"
+
+    # Install monitor script from upstream
+    install -m 755 scripts/su_axb35_monitor "$pkgdir/usr/local/bin/"
+
+    # Install our custom scripts
+    install -m 755 "$srcdir/axb35-apply-settings" "$pkgdir/usr/local/bin/"
+    install -m 755 "$srcdir/info.sh" "$pkgdir/usr/local/bin/"
+    install -m 755 "$srcdir/test_fan_mode_fixed.sh" "$pkgdir/usr/local/bin/"
+
+    # Install systemd service
+    install -d "$pkgdir/usr/lib/systemd/system/"
+    install -m 644 "$srcdir/axb35-fan-control.service" "$pkgdir/usr/lib/systemd/system/"
+
+    # Auto-load module config
+    install -d "$pkgdir/etc/modules-load.d/"
+    echo "ec_su_axb35" > "$pkgdir/etc/modules-load.d/ec_su_axb35.conf"
+}

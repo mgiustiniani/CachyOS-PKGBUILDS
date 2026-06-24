@@ -1,0 +1,23 @@
+#!/bin/bash
+# Apply custom fan curves and power mode on boot
+# Installed by install.sh, called by systemd service
+
+set -e
+
+# Wait for driver to be ready
+while [ ! -d /sys/class/ec_su_axb35 ]; do
+    sleep 0.3
+done
+sleep 1
+
+# Custom curves (hysteresis buffer to prevent rapid cycling)
+# rampup:   temp thresholds where fan increases to next level
+# rampdown: temp thresholds where fan decreases to previous level
+for fan in fan1 fan2 fan3; do
+    echo curve > "/sys/class/ec_su_axb35/$fan/mode"
+    echo "60,70,83,95,97" > "/sys/class/ec_su_axb35/$fan/rampup_curve"
+    echo "40,50,80,94,96" > "/sys/class/ec_su_axb35/$fan/rampdown_curve"
+done
+
+# Default power mode (balanced = 85W)
+echo balanced > /sys/class/ec_su_axb35/apu/power_mode

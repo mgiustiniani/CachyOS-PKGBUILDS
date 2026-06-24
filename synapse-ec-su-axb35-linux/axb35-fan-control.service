@@ -1,0 +1,11 @@
+[Unit]
+Description=AXB35 Fan Curve & Power Mode
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/axb35-apply-settings
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
