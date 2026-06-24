@@ -1,4 +1,4 @@
-pkgbase = cachyos-calamares-next
+pkgbase = synapse-calamares
 	pkgdesc = Distribution-independent installer framework
 	pkgver = 3.4.1
 	pkgrel = 1

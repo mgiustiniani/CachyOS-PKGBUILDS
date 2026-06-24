@@ -2,7 +2,7 @@
 # Maintainer: Vladislav Nepogodin <nepogodin.vlad@gmail.com>
 # Contributor: Philip Müller <philm[at]manjaro[dog]org>
 
-pkgname=synapse-calamares-next
+pkgname=synapse-calamares
 pkgver=3.4.1
 pkgrel=1
 pkgdesc='Distribution-independent installer framework'
