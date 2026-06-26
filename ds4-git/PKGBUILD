@@ -1,0 +1,65 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+# Contributor: Salvatore Sanfilippo <antirez@gmail.com> (upstream author)
+
+pkgname=ds4-git
+pkgver=0.0.0
+pkgrel=1
+pkgdesc='DeepSeek 4 (DS4) inference engine by antirez — ROCm Strix Halo edition (git version)'
+arch=('x86_64')
+url='https://github.com/antirez/ds4'
+license=('LicenseRef-Antirez-DS4')
+depends=('hipblas' 'hipblaslt' 'rocblas' 'rocwmma' 'rocminfo' 'rocm-smi-lib')
+makedepends=('git' 'gcc' 'hipcc' 'comgr')
+provides=('ds4')
+conflicts=('ds4')
+source=('ds4::git+https://github.com/antirez/ds4.git')
+sha256sums=('SKIP')
+
+prepare() {
+    cd "$srcdir"
+}
+
+pkgver() {
+    cd "$srcdir/ds4"
+    git describe --always --long --tags 2>/dev/null || echo "0.0.0"
+}
+
+build() {
+    cd "$srcdir/ds4"
+
+    # Build ROCm target for Strix Halo (gfx1151)
+    # Also build CPU-only binaries for fallback
+    make -B ds4 ds4-server ds4-bench ds4-eval ds4-agent \
+        CORE_OBJS="ds4.o ds4_distributed.o ds4_ssd.o ds4_rocm.o" \
+        CFLAGS="$(CFLAGS) -DDS4_ROCM_BUILD" \
+        DS4_LINK="hipcc -O3 -ffast-math -g -fno-finite-math-only -pthread -D__HIP_PLATFORM_AMD__ -Wno-unused-command-line-argument --offload-arch=gfx1151" \
+        DS4_LINK_LIBS="-lm -pthread -lhipblas -lhipblaslt" \
+        LDLIBS="-lm -pthread" \
+        CC="gcc" \
+        OBJCFLAGS="" \
+        HIPCC="hipcc" \
+        ROCM_CFLAGS="-O3 -ffast-math -g -fno-finite-math-only -pthread -D__HIP_PLATFORM_AMD__ -Wno-unused-command-line-argument --offload-arch=gfx1151" \
+        ROCM_LDLIBS="-lm -pthread -lhipblas -lhipblaslt" \
+        NVCC="echo" \
+        CUDA_HOME=""
+}
+
+check() {
+    cd "$srcdir/ds4"
+    ./ds4-eval --self-test-extractors || true
+}
+
+package() {
+    cd "$srcdir/ds4"
+    install -Dm755 ds4 -t "$pkgdir/usr/bin/"
+    install -Dm755 ds4-server -t "$pkgdir/usr/bin/"
+    install -Dm755 ds4-bench -t "$pkgdir/usr/bin/"
+    install -Dm755 ds4-eval -t "$pkgdir/usr/bin/"
+    install -Dm755 ds4-agent -t "$pkgdir/usr/bin/"
+    install -Dm644 STRIXHALO.md -t "$pkgdir/usr/share/doc/ds4/"
+    install -Dm644 README.md -t "$pkgdir/usr/share/doc/ds4/"
+    install -Dm644 MODEL_CARD.md -t "$pkgdir/usr/share/doc/ds4/"
+    install -Dm644 AGENT.md -t "$pkgdir/usr/share/doc/ds4/"
+    install -Dm644 CONTRIBUTING.md -t "$pkgdir/usr/share/doc/ds4/"
+    install -Dm644 LICENSE -t "$pkgdir/usr/share/licenses/ds4/"
+}
