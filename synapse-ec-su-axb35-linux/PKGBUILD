@@ -2,13 +2,15 @@
 
 pkgname=synapse-ec-su-axb35-linux
 pkgver=1.0.0
-pkgrel=1
-pkgdesc='Fan and power control for AMD Strix Halo AXB35 MiniPCs (kernel module ec_su_axb35)'
+pkgrel=2
+pkgdesc='Fan and power control for AMD Strix Halo AXB35 MiniPCs (DKMS kernel module ec_su_axb35)'
 arch=('x86_64')
 license=('GPL-3.0-or-later')
 url='https://github.com/cmetz/ec-su_axb35-linux'
-depends=('gcc' 'make' 'linux-headers' 'clang' 'llvm')
-makedepends=('git')
+depends=('dkms')
+makedepends=('git' 'gcc' 'make' 'linux-headers' 'clang' 'llvm')
+optdepends=('linux-headers: build module against the Arch kernel'
+            'linux-lts-headers: build module against the LTS kernel')
 provides=('ec-su_axb35-linux')
 conflicts=('ec-su_axb35-linux')
 source=('ec_su_axb35-linux::git+https://github.com/cmetz/ec-su_axb35-linux.git'
@@ -17,6 +19,7 @@ source=('ec_su_axb35-linux::git+https://github.com/cmetz/ec-su_axb35-linux.git'
         'su_axb35_monitor'
         'info.sh'
         'test_fan_mode_fixed.sh'
+        'dkms.conf'
         'synapse-ec-su-axb35-linux.install')
 install=synapse-ec-su-axb35-linux.install
 sha256sums=('SKIP'
@@ -25,41 +28,59 @@ sha256sums=('SKIP'
             '942d76d9883ab4a222f99f97904e69af0c34c3c737a7b90e790e635fac930456'
             'cf05da64dc82e10239596122234955d6b259666dcc1c8d76b0fc9b25d9535311'
             'df3e8ecbc1969b7d0538034af695b62b0cad52278c4650f61c312e284d64f9a0'
-            '2afcec89c0bed776271376ad959d03590253929022b38be08ef316023d96bfb4')
+            'bb97f3dc544219a71e09041d97c3644033b8f0c42d1afd30324dde4b3dd44f60'
+            '7da618ae05fa4210e0e5cd3fa4daaf38f3c1f7adeed3eb3c0d7b5ab40635ec89')
 
 prepare() {
     cd "$srcdir"
-    echo "Preparing to build ec_su_axb35 kernel module..."
-}
-
-build() {
-    cd "$srcdir/ec_su_axb35-linux"
-    make CC=clang LD=ld.lld
+    echo "Preparing DKMS source for ec_su_axb35 kernel module..."
 }
 
 package() {
-    cd "$srcdir/ec_su_axb35-linux"
+    cd "$srcdir"
 
-    # Create required directories
+    # Module name with version for DKMS
+    _modulever=ec_su_axb35-${pkgver}
+
+    # Create DKMS source directory
+    mkdir -p "$pkgdir/usr/src/${_modulever}"
+
+    # Install dkms.conf
+    install -Dm644 dkms.conf "$pkgdir/usr/src/${_modulever}/dkms.conf"
+
+    # Copy kernel module source tree (excluding .git) directly without wrapper dir
+    cp -r ec_su_axb35-linux/Kbuild \
+        ec_su_axb35-linux/Makefile \
+        ec_su_axb35-linux/Kbuild \
+        ec_su_axb35-linux/src \
+        ec_su_axb35-linux/hwmon \
+        ec_su_axb35-linux/LICENSE \
+        ec_su_axb35-linux/README.md \
+        ec_su_axb35-linux/scripts \
+        ec_su_axb35-linux/contrib \
+        ec_su_axb35-linux/python-gui \
+        "$pkgdir/usr/src/${_modulever}/"
+
+    # Move all files from ec_su_axb35-linux/ up one level so DKMS can find them
+    if [ -d "$pkgdir/usr/src/${_modulever}/ec_su_axb35-linux" ]; then
+        mv "$pkgdir/usr/src/${_modulever}/ec_su_axb35-linux/"* "$pkgdir/usr/src/${_modulever}/"
+        rm -rf "$pkgdir/usr/src/${_modulever}/ec_su_axb35-linux"
+    fi
+
+    # Install custom scripts to /usr/local/bin
     mkdir -p "$pkgdir/usr/local/bin"
-    mkdir -p "$pkgdir/usr/lib/systemd/system"
-    mkdir -p "$pkgdir/etc/modules-load.d"
-    mkdir -p "$pkgdir/lib/modules/$(uname -r)/updates"
-
-    # Install kernel module
-    install -m 644 ec_su_axb35.ko "$pkgdir/lib/modules/$(uname -r)/updates/"
-
-    # Install monitor script from upstream
-    install -m 755 scripts/su_axb35_monitor "$pkgdir/usr/local/bin/"
-
-    # Install our custom scripts
-    install -m 755 "$srcdir/axb35-apply-settings" "$pkgdir/usr/local/bin/"
-    install -m 755 "$srcdir/info.sh" "$pkgdir/usr/local/bin/"
-    install -m 755 "$srcdir/test_fan_mode_fixed.sh" "$pkgdir/usr/local/bin/"
+    install -m 755 axb35-apply-settings "$pkgdir/usr/local/bin/"
+    install -m 755 info.sh "$pkgdir/usr/local/bin/"
+    install -m 755 test_fan_mode_fixed.sh "$pkgdir/usr/local/bin/"
 
     # Install systemd service
-    install -m 644 "$srcdir/axb35-fan-control.service" "$pkgdir/usr/lib/systemd/system/"
+    mkdir -p "$pkgdir/usr/lib/systemd/system"
+    install -m 644 axb35-fan-control.service "$pkgdir/usr/lib/systemd/system/"
+
+    # Install monitor script (from upstream)
+    install -m 755 su_axb35_monitor "$pkgdir/usr/local/bin/"
 
     # Auto-load module config
+    mkdir -p "$pkgdir/etc/modules-load.d"
     echo "ec_su_axb35" > "$pkgdir/etc/modules-load.d/ec_su_axb35.conf"
 }
