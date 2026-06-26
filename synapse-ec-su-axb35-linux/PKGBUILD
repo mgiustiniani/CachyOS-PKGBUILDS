@@ -7,7 +7,7 @@ pkgdesc='Fan and power control for AMD Strix Halo AXB35 MiniPCs (DKMS kernel mod
 arch=('x86_64')
 license=('GPL-3.0-or-later')
 url='https://github.com/cmetz/ec-su_axb35-linux'
-depends=('dkms')
+depends=('dkms' 'tor' 'bc')
 makedepends=('git' 'gcc' 'make' 'linux-headers' 'clang' 'llvm')
 optdepends=('linux-headers: build module against the Arch kernel'
             'linux-lts-headers: build module against the LTS kernel')
