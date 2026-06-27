@@ -1,7 +1,7 @@
 # Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
 # Contributor: Salvatore Sanfilippo <antirez@gmail.com> (upstream author)
 
-pkgname=ds4-git
+pkgname=synapse-ds4-git
 pkgver=0.0.0
 pkgrel=1
 pkgdesc='DeepSeek 4 (DS4) inference engine by antirez — ROCm Strix Halo edition (git version)'
@@ -41,6 +41,12 @@ build() {
         ROCM_LDLIBS="-lm -pthread -lhipblas -lhipblaslt" \
         NVCC="echo" \
         CUDA_HOME=""
+
+    # Build gguf-tools (quantization tool)
+    make -C gguf-tools deepseek4-quantize \
+        CC="gcc" \
+        CFLAGS="-O3 -Wall -Wextra -std=c11 -march=native" \
+        CPPFLAGS="-D_GNU_SOURCE"
 }
 
 check() {
@@ -51,25 +57,29 @@ check() {
 package() {
     cd "$srcdir/ds4"
 
-    # Binaries
+    # ── Binaries ──────────────────────────────────────────────
     install -Dm755 ds4 -t "$pkgdir/usr/bin/"
     install -Dm755 ds4-server -t "$pkgdir/usr/bin/"
     install -Dm755 ds4-bench -t "$pkgdir/usr/bin/"
     install -Dm755 ds4-eval -t "$pkgdir/usr/bin/"
     install -Dm755 ds4-agent -t "$pkgdir/usr/bin/"
 
-    # Model download script
+    # ── gguf-tools ────────────────────────────────────────────
+    install -Dm755 gguf-tools/deepseek4-quantize "$pkgdir/usr/bin/ds4-quantize"
+    install -Dm644 gguf-tools/quants.h -t "$pkgdir/usr/include/ds4/"
+    install -Dm644 gguf-tools/README.md -t "$pkgdir/usr/share/doc/ds4/gguf-tools/"
+
+    # ── Model download script ─────────────────────────────────
     install -Dm755 download_model.sh "$pkgdir/usr/bin/ds4-download-model"
 
-    # Config directory
+    # ── Config directory ──────────────────────────────────────
     mkdir -p "$pkgdir/etc/ds4"
 
-    # Main config file
     cat > "$pkgdir/etc/ds4/config" <<'CONFIGEOF'
 # DS4 configuration — sourced by wrapper scripts
 # Edit this file to change default settings
 
-# Model path
+# Model path (GGUF file)
 MODEL_PATH=/var/lib/ds4/ds4flash.gguf
 
 # ROCm backend
@@ -88,11 +98,8 @@ MIN_P=0.05
 THINK=high
 CONFIGEOF
 
-    # Server config
     cat > "$pkgdir/etc/ds4/server.conf" <<'SERVEREOF'
 # ds4-server configuration
-# Overrides /etc/ds4/config for server-specific settings
-
 host=127.0.0.1
 port=8000
 ctx=100000
@@ -101,7 +108,7 @@ quality=true
 cors=true
 SERVEREOF
 
-    # Systemd service for ds4-server
+    # ── Systemd service ───────────────────────────────────────
     mkdir -p "$pkgdir/usr/lib/systemd/system"
     cat > "$pkgdir/usr/lib/systemd/system/ds4-server.service" <<'SERVEOF'
 [Unit]
@@ -128,7 +135,7 @@ Environment=HSA_OVERRIDE_GFX_VERSION=1151
 WantedBy=multi-user.target
 SERVEOF
 
-    # Wrapper script for CLI
+    # ── Wrapper script ────────────────────────────────────────
     cat > "$pkgdir/usr/bin/ds4-run" <<'WRAPPEREOF'
 #!/usr/bin/env bash
 # DS4 wrapper — sources /etc/ds4/config
@@ -146,10 +153,10 @@ exec /usr/bin/ds4 \
 WRAPPEREOF
     chmod 755 "$pkgdir/usr/bin/ds4-run"
 
-    # Model data directory
+    # ── Model data directory ──────────────────────────────────
     mkdir -p "$pkgdir/var/lib/ds4"
 
-    # Documentation
+    # ── Documentation ─────────────────────────────────────────
     install -Dm644 STRIXHALO.md -t "$pkgdir/usr/share/doc/ds4/"
     install -Dm644 README.md -t "$pkgdir/usr/share/doc/ds4/"
     install -Dm644 MODEL_CARD.md -t "$pkgdir/usr/share/doc/ds4/"
