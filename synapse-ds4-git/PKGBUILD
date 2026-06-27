@@ -65,7 +65,7 @@ package() {
     install -Dm755 ds4-agent -t "$pkgdir/usr/bin/"
 
     # ── gguf-tools ────────────────────────────────────────────
-    install -Dm755 gguf-tools/deepseek4-quantize "$pkgdir/usr/bin/ds4-quantize"
+    install -Dm755 gguf-tools/deepseek4-quantize "$pkgdir/usr/bin/deepseek4-quantize"
     install -Dm644 gguf-tools/quants.h -t "$pkgdir/usr/include/ds4/"
     install -Dm644 gguf-tools/README.md -t "$pkgdir/usr/share/doc/ds4/gguf-tools/"
 
