@@ -28,7 +28,6 @@ build() {
     cd "$srcdir/ds4"
 
     # Build ROCm target for Strix Halo (gfx1151)
-    # Also build CPU-only binaries for fallback
     make -B ds4 ds4-server ds4-bench ds4-eval ds4-agent \
         CORE_OBJS="ds4.o ds4_distributed.o ds4_ssd.o ds4_rocm.o" \
         CFLAGS="$(CFLAGS) -DDS4_ROCM_BUILD" \
@@ -51,11 +50,106 @@ check() {
 
 package() {
     cd "$srcdir/ds4"
+
+    # Binaries
     install -Dm755 ds4 -t "$pkgdir/usr/bin/"
     install -Dm755 ds4-server -t "$pkgdir/usr/bin/"
     install -Dm755 ds4-bench -t "$pkgdir/usr/bin/"
     install -Dm755 ds4-eval -t "$pkgdir/usr/bin/"
     install -Dm755 ds4-agent -t "$pkgdir/usr/bin/"
+
+    # Model download script
+    install -Dm755 download_model.sh "$pkgdir/usr/bin/ds4-download-model"
+
+    # Config directory
+    mkdir -p "$pkgdir/etc/ds4"
+
+    # Main config file
+    cat > "$pkgdir/etc/ds4/config" <<'CONFIGEOF'
+# DS4 configuration — sourced by wrapper scripts
+# Edit this file to change default settings
+
+# Model path
+MODEL_PATH=/var/lib/ds4/ds4flash.gguf
+
+# ROCm backend
+BACKEND=rocm
+
+# Server settings
+SERVER_HOST=127.0.0.1
+SERVER_PORT=8000
+SERVER_CTX=100000
+SERVER_TOKENS=393216
+
+# Generation defaults
+TEMPERATURE=1.0
+TOP_P=1.0
+MIN_P=0.05
+THINK=high
+CONFIGEOF
+
+    # Server config
+    cat > "$pkgdir/etc/ds4/server.conf" <<'SERVEREOF'
+# ds4-server configuration
+# Overrides /etc/ds4/config for server-specific settings
+
+host=127.0.0.1
+port=8000
+ctx=100000
+tokens=393216
+quality=true
+cors=true
+SERVEREOF
+
+    # Systemd service for ds4-server
+    mkdir -p "$pkgdir/usr/lib/systemd/system"
+    cat > "$pkgdir/usr/lib/systemd/system/ds4-server.service" <<'SERVEOF'
+[Unit]
+Description=DS4 LLM inference server (ROCm Strix Halo)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ds4-server \
+    --model /var/lib/ds4/ds4flash.gguf \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --ctx 100000 \
+    --cors
+Restart=on-failure
+RestartSec=10
+User=root
+# ROCm environment
+Environment=HSA_ENABLE_GPU_RECOVERY=1
+Environment=HSA_OVERRIDE_GFX_VERSION=1151
+
+[Install]
+WantedBy=multi-user.target
+SERVEOF
+
+    # Wrapper script for CLI
+    cat > "$pkgdir/usr/bin/ds4-run" <<'WRAPPEREOF'
+#!/usr/bin/env bash
+# DS4 wrapper — sources /etc/ds4/config
+set -euo pipefail
+
+CONFIG=/etc/ds4/config
+if [ -f "$CONFIG" ]; then
+    . "$CONFIG"
+fi
+
+exec /usr/bin/ds4 \
+    --model "${MODEL_PATH:-/var/lib/ds4/ds4flash.gguf}" \
+    --backend "${BACKEND:-rocm}" \
+    "$@"
+WRAPPEREOF
+    chmod 755 "$pkgdir/usr/bin/ds4-run"
+
+    # Model data directory
+    mkdir -p "$pkgdir/var/lib/ds4"
+
+    # Documentation
     install -Dm644 STRIXHALO.md -t "$pkgdir/usr/share/doc/ds4/"
     install -Dm644 README.md -t "$pkgdir/usr/share/doc/ds4/"
     install -Dm644 MODEL_CARD.md -t "$pkgdir/usr/share/doc/ds4/"
