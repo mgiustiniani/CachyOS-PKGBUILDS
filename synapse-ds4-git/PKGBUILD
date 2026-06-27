@@ -82,6 +82,11 @@ package() {
 # Model path (GGUF file)
 MODEL_PATH=/var/lib/ds4/ds4flash.gguf
 
+# MTP speculative decoding model (optional)
+# Download with: ds4-download-model mtp
+MTP_PATH=
+MTP_DRAFT_TOKENS=2
+
 # ROCm backend
 BACKEND=rocm
 
@@ -100,12 +105,17 @@ CONFIGEOF
 
     cat > "$pkgdir/etc/ds4/server.conf" <<'SERVEREOF'
 # ds4-server configuration
+# Overrides /etc/ds4/config for server-specific settings
 host=127.0.0.1
 port=8000
 ctx=100000
 tokens=393216
 quality=true
 cors=true
+
+# MTP speculative decoding (optional)
+# mtp_path=/var/lib/ds4/DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf
+# mtp_draft=2
 SERVEREOF
 
     # ── Systemd service ───────────────────────────────────────
@@ -118,12 +128,16 @@ Wants=network.target
 
 [Service]
 Type=simple
+# Load config
+EnvironmentFile=/etc/ds4/config
 ExecStart=/usr/bin/ds4-server \
-    --model /var/lib/ds4/ds4flash.gguf \
-    --host 127.0.0.1 \
-    --port 8000 \
-    --ctx 100000 \
-    --cors
+    --model ${MODEL_PATH:-/var/lib/ds4/ds4flash.gguf} \
+    --host ${SERVER_HOST:-127.0.0.1} \
+    --port ${SERVER_PORT:-8000} \
+    --ctx ${SERVER_CTX:-100000} \
+    --tokens ${SERVER_TOKENS:-393216} \
+    --cors \
+    ${MTP_PATH:+--mtp $MTP_PATH --mtp-draft ${MTP_DRAFT_TOKENS:-2}}
 Restart=on-failure
 RestartSec=10
 User=root
@@ -146,10 +160,18 @@ if [ -f "$CONFIG" ]; then
     . "$CONFIG"
 fi
 
-exec /usr/bin/ds4 \
-    --model "${MODEL_PATH:-/var/lib/ds4/ds4flash.gguf}" \
-    --backend "${BACKEND:-rocm}" \
-    "$@"
+# Build args
+ARGS=()
+ARGS+=(--model "${MODEL_PATH:-/var/lib/ds4/ds4flash.gguf}")
+ARGS+=(--backend "${BACKEND:-rocm}")
+
+# MTP speculative decoding
+if [ -n "${MTP_PATH:-}" ]; then
+    ARGS+=(--mtp "$MTP_PATH")
+    ARGS+=(--mtp-draft "${MTP_DRAFT_TOKENS:-2}")
+fi
+
+exec /usr/bin/ds4 "${ARGS[@]}" "$@"
 WRAPPEREOF
     chmod 755 "$pkgdir/usr/bin/ds4-run"
 
