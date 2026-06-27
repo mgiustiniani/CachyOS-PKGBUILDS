@@ -1,7 +1,7 @@
 # Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
 # Contributor: Salvatore Sanfilippo <antirez@gmail.com> (upstream author)
 
-pkgname=synapse-ds4-git
+pkgname=ds4-git
 pkgver=0.0.0
 pkgrel=1
 pkgdesc='DeepSeek 4 (DS4) inference engine by antirez — ROCm Strix Halo edition (git version)'
