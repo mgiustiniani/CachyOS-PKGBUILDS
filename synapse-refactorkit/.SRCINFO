@@ -1,0 +1,20 @@
+pkgbase = synapse-refactorkit
+	pkgdesc = Deterministic Java refactoring and code-intelligence CLI with bundled runtime (Synapse package)
+	pkgver = 0.1.0_alpha
+	pkgrel = 1
+	url = https://github.com/mgiustiniani/refactorkit
+	arch = x86_64
+	license = custom
+	makedepends = git
+	makedepends = jdk21-openjdk
+	depends = bash
+	depends = glibc
+	depends = zlib
+	provides = refactorkit
+	conflicts = refactorkit
+	options = !strip
+	options = !debug
+	source = git+https://github.com/mgiustiniani/refactorkit.git#commit=49f5cc37b068d24bc8cfc9513048c29f223b036c
+	sha256sums = SKIP
+
+pkgname = synapse-refactorkit

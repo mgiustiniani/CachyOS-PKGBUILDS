@@ -1,0 +1,47 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+
+pkgname=synapse-refactorkit
+pkgver=0.1.0_alpha
+pkgrel=1
+pkgdesc='Deterministic Java refactoring and code-intelligence CLI with bundled runtime (Synapse package)'
+arch=('x86_64')
+url='https://github.com/mgiustiniani/refactorkit'
+license=('custom')
+depends=('bash' 'glibc' 'zlib')
+makedepends=('git' 'jdk21-openjdk')
+provides=('refactorkit')
+conflicts=('refactorkit')
+options=('!strip' '!debug')
+
+_commit='49f5cc37b068d24bc8cfc9513048c29f223b036c'
+source=("git+${url}.git#commit=${_commit}")
+sha256sums=('SKIP')
+
+build() {
+    cd "${srcdir}/refactorkit"
+    ./gradlew --no-daemon packageCliRuntime distCliRuntimeZip
+}
+
+package() {
+    cd "${srcdir}/refactorkit"
+
+    install -dm755 "${pkgdir}/opt/refactorkit"
+    cp -a modules/refactorkit-cli/build/package/refactorkit/. "${pkgdir}/opt/refactorkit/"
+
+    # The bundled launcher is relative to its own path. A wrapper in /usr/bin keeps
+    # PATH execution independent from symlink resolution and does not require a
+    # system JDK/JRE at runtime.
+    install -dm755 "${pkgdir}/usr/bin"
+    cat > "${pkgdir}/usr/bin/refactorkit" <<'EOF'
+#!/usr/bin/env sh
+set -e
+APP_HOME="/opt/refactorkit"
+exec "$APP_HOME/runtime/bin/java" -cp "$APP_HOME/lib/*" org.refactorkit.cli.RefactorKitCliKt "$@"
+EOF
+    chmod 755 "${pkgdir}/usr/bin/refactorkit"
+
+    install -dm755 "${pkgdir}/usr/share/doc/${pkgname}"
+    install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+    install -Dm644 CHANGELOG.md "${pkgdir}/usr/share/doc/${pkgname}/CHANGELOG.md"
+    cp -a docs "${pkgdir}/usr/share/doc/${pkgname}/docs"
+}
