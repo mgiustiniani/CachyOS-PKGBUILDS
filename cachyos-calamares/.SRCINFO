@@ -1,8 +1,8 @@
 pkgbase = synapse-calamares
 	pkgdesc = Distribution-independent installer framework
 	pkgver = 3.4.1
-	pkgrel = 1
-	url = https://github.com/CachyOS/cachyos-calamares
+	pkgrel = 2
+	url = https://github.com/mgiustiniani/cachyos-calamares
 	arch = x86_64
 	license = GPL-3.0-or-later
 	makedepends = boost
@@ -45,7 +45,7 @@ pkgbase = synapse-calamares
 	provides = calamares
 	conflicts = calamares
 	options = !emptydirs
-	source = calamares::git+https://github.com/CachyOS/cachyos-calamares.git#branch=cachyos
+	source = calamares::git+https://github.com/mgiustiniani/cachyos-calamares.git#branch=cachyos-ai-integration
 	sha256sums = SKIP
 
 pkgname = synapse-calamares
