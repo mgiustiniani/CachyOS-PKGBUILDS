@@ -1,0 +1,27 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+
+pkgname=synapse-deskflow
+pkgver=1.26.0.309
+pkgrel=1
+pkgdesc='Deskflow continuous build with native Wayland clipboard support (Synapse package)'
+arch=('x86_64')
+url='https://github.com/deskflow/deskflow'
+license=('GPL-2.0-only WITH LicenseRef-OpenSSL-Exception')
+depends=(
+    'gcc-libs' 'glib2' 'glibc' 'hicolor-icon-theme' 'libei' 'libglvnd'
+    'libice' 'libportal' 'libsm' 'libx11' 'libxext' 'libxi' 'libxinerama'
+    'libxkbcommon' 'libxkbcommon-x11' 'libxkbfile' 'libxrandr' 'libxtst'
+    'openssl' 'qt6-base' 'qt6-svg' 'qt6-translations'
+)
+provides=('deskflow' 'deskflow-git')
+conflicts=('deskflow' 'deskflow-git')
+options=('!debug')
+
+_commit='1995423cb884bd6d67e7e1ae33941c691325ada2'
+source=("deskflow-${_commit}-arch-x86_64.pkg.tar.zst::https://github.com/deskflow/deskflow/releases/download/continuous/deskflow-continuous-arch-x86_64.pkg.tar.zst")
+sha256sums=('437dafeb34a0e25cc4fc8e390bf73a059dde75ff3e0d63e06f7f52bee29c40d5')
+
+package() {
+    bsdtar -xf "${srcdir}/deskflow-${_commit}-arch-x86_64.pkg.tar.zst" -C "${pkgdir}"
+    rm -f "${pkgdir}/.BUILDINFO" "${pkgdir}/.MTREE" "${pkgdir}/.PKGINFO"
+}
