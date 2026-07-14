@@ -1,34 +1,22 @@
 pre_install() {
-    # Remove any old manually installed module
     rmmod ec_su_axb35 2>/dev/null || true
 }
 
 post_install() {
-    # Apply fan curves and power mode immediately after install
-    echo "synapse-ec-su-axb35-linux: DKMS module installed."
-    echo "DKMS will build ec_su_axb35 for each installed kernel."
-    echo ""
-    echo "To manually build now, run:"
-    echo "  dkms install ec_su_axb35/${pkgver} -k \$(uname -r)"
-    echo ""
-    echo "Apply fan curves and power mode..."
-    
-    if [ -d /sys/class/ec_su_axb35 ]; then
-        for fan in fan1 fan2 fan3; do
-            echo curve > "/sys/class/ec_su_axb35/$fan/mode"
-            echo "60,70,83,95,97" > "/sys/class/ec_su_axb35/$fan/rampup_curve"
-            echo "40,50,80,94,96" > "/sys/class/ec_su_axb35/$fan/rampdown_curve"
-        done
-        echo balanced > /sys/class/ec_su_axb35/apu/power_mode
-        echo "Fan curves and power mode applied."
-    else
-        echo "WARNING: Driver not loaded yet."
-        echo "The module will be loaded at boot via modules-load.d,"
-        echo "or after 'dkms install' completes."
-    fi
-    
-    # Run depmod to update module dependencies
+    echo "synapse-ec-su-axb35-linux: DKMS module and C tools installed."
+    echo "DKMS builds ec_su_axb35 for each installed kernel."
+
     depmod -a
+    systemctl daemon-reload
+    systemctl enable axb35-fan-control.service 2>/dev/null || true
+
+    if grep -qx AXB35-02 /sys/class/dmi/id/board_name 2>/dev/null; then
+        echo "AXB35 service enabled; it will load the driver after DKMS completes."
+    elif grep -Eq "ROG Flow Z13|GZ30[12]" /sys/class/dmi/id/product_name 2>/dev/null; then
+        echo "Z13 service enabled; no external kernel module is required."
+    else
+        echo "Unsupported system detected; the policy service will be skipped."
+    fi
 }
 
 pre_upgrade() {
@@ -40,11 +28,12 @@ post_upgrade() {
 }
 
 pre_remove() {
+    systemctl disable --now axb35-fan-control.service 2>/dev/null || true
     rmmod ec_su_axb35 2>/dev/null || true
 }
 
 post_remove() {
-    echo "synapse-ec-su-axb35-linux: DKMS module removed."
-    echo "Run 'dkms remove ec_su_axb35/${pkgver} -k \$(uname -r)' to clean DKMS."
+    echo "synapse-ec-su-axb35-linux: package removed."
+    systemctl daemon-reload
     depmod -a
 }
