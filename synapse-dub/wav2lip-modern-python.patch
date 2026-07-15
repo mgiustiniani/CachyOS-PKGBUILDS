@@ -1,6 +1,8 @@
+diff --git a/audio.py b/audio.py
+index 32b20c4..890c993 100644
 --- a/audio.py
 +++ b/audio.py
-@@ -97,8 +97,8 @@
+@@ -97,8 +97,8 @@ def _linear_to_mel(spectogram):
  
  def _build_mel_basis():
      assert hp.fmax <= hp.sample_rate // 2
@@ -11,46 +13,11 @@
  
  def _amp_to_db(x):
      min_level = np.exp(hp.min_level_db / 20 * np.log(10))
---- a/inference.py
-+++ b/inference.py
-@@ -159,10 +159,10 @@
- 
- def _load(checkpoint_path):
- 	if device == 'cuda':
--		checkpoint = torch.load(checkpoint_path)
-+		checkpoint = torch.load(checkpoint_path, weights_only=False)
- 	else:
- 		checkpoint = torch.load(checkpoint_path,
--								map_location=lambda storage, loc: storage)
-+								map_location=lambda storage, loc: storage, weights_only=False)
- 	return checkpoint
- 
- def load_model(path):
-@@ -253,8 +253,10 @@
- 			print ("Model loaded")
- 
- 			frame_h, frame_w = full_frames[0].shape[:-1]
--			out = cv2.VideoWriter('temp/result.avi', 
--									cv2.VideoWriter_fourcc(*'DIVX'), fps, (frame_w, frame_h))
-+			out = cv2.VideoWriter('temp/result.avi', cv2.CAP_FFMPEG,
-+									cv2.VideoWriter_fourcc(*'MJPG'), fps, (frame_w, frame_h))
-+			if not out.isOpened():
-+				raise RuntimeError('OpenCV FFmpeg VideoWriter could not create temp/result.avi')
- 
- 		img_batch = torch.FloatTensor(np.transpose(img_batch, (0, 3, 1, 2))).to(device)
- 		mel_batch = torch.FloatTensor(np.transpose(mel_batch, (0, 3, 1, 2))).to(device)
-@@ -274,7 +276,7 @@
- 	out.release()
- 
- 	command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(args.audio, 'temp/result.avi', args.outfile)
--	subprocess.call(command, shell=platform.system() != 'Windows')
-+	subprocess.check_call(command, shell=platform.system() != 'Windows')
- 
- if __name__ == '__main__':
- 	main()
+diff --git a/face_detection/detection/sfd/sfd_detector.py b/face_detection/detection/sfd/sfd_detector.py
+index 8fbce15..818eabf 100644
 --- a/face_detection/detection/sfd/sfd_detector.py
 +++ b/face_detection/detection/sfd/sfd_detector.py
-@@ -14,14 +14,14 @@
+@@ -14,14 +14,14 @@ models_urls = {
  
  
  class SFDDetector(FaceDetector):
@@ -67,3 +34,122 @@
  
          self.face_detector = s3fd()
          self.face_detector.load_state_dict(model_weights)
+diff --git a/inference.py b/inference.py
+index 9069252..948a8c0 100644
+--- a/inference.py
++++ b/inference.py
+@@ -84,23 +84,32 @@ def face_detect(images):
+ 			continue
+ 		break
+ 
+-	results = []
++	boxes = []
++	missing_faces = 0
+ 	pady1, pady2, padx1, padx2 = args.pads
+ 	for rect, image in zip(predictions, images):
+ 		if rect is None:
+-			cv2.imwrite('temp/faulty_frame.jpg', image) # check this frame where the face was not detected.
+-			raise ValueError('Face not detected! Ensure the video contains a face in all the frames.')
++			boxes.append(None)
++			missing_faces += 1
++			continue
+ 
+ 		y1 = max(0, rect[1] - pady1)
+ 		y2 = min(image.shape[0], rect[3] + pady2)
+ 		x1 = max(0, rect[0] - padx1)
+ 		x2 = min(image.shape[1], rect[2] + padx2)
+-		
+-		results.append([x1, y1, x2, y2])
++		boxes.append([x1, y1, x2, y2])
+ 
+-	boxes = np.array(results)
+-	if not args.nosmooth: boxes = get_smoothened_boxes(boxes, T=5)
+-	results = [[image[y1: y2, x1:x2], (y1, y2, x1, x2)] for image, (x1, y1, x2, y2) in zip(images, boxes)]
++	if missing_faces == 0 and not args.nosmooth:
++		boxes = get_smoothened_boxes(np.array(boxes), T=5)
++	elif missing_faces:
++		print('WARNING: no face detected in {} frame(s); preserving those frames unchanged'.format(missing_faces))
++	results = []
++	for image, box in zip(images, boxes):
++		if box is None:
++			results.append(None)
++			continue
++		x1, y1, x2, y2 = box
++		results.append([image[y1:y2, x1:x2], (y1, y2, x1, x2)])
+ 
+ 	del detector
+ 	return results 
+@@ -121,9 +130,13 @@ def datagen(frames, mels):
+ 	for i, m in enumerate(mels):
+ 		idx = 0 if args.static else i%len(frames)
+ 		frame_to_save = frames[idx].copy()
+-		face, coords = face_det_results[idx].copy()
+-
+-		face = cv2.resize(face, (args.img_size, args.img_size))
++		detected_face = face_det_results[idx]
++		if detected_face is None:
++			face = np.zeros((args.img_size, args.img_size, 3), dtype=np.uint8)
++			coords = None
++		else:
++			face, coords = detected_face
++			face = cv2.resize(face.copy(), (args.img_size, args.img_size))
+ 			
+ 		img_batch.append(face)
+ 		mel_batch.append(m)
+@@ -159,10 +172,10 @@ print('Using {} for inference.'.format(device))
+ 
+ def _load(checkpoint_path):
+ 	if device == 'cuda':
+-		checkpoint = torch.load(checkpoint_path)
++		checkpoint = torch.load(checkpoint_path, weights_only=False)
+ 	else:
+ 		checkpoint = torch.load(checkpoint_path,
+-								map_location=lambda storage, loc: storage)
++								map_location=lambda storage, loc: storage, weights_only=False)
+ 	return checkpoint
+ 
+ def load_model(path):
+@@ -242,6 +255,8 @@ def main():
+ 	print("Length of mel chunks: {}".format(len(mel_chunks)))
+ 
+ 	full_frames = full_frames[:len(mel_chunks)]
++	if not args.static:
++		mel_chunks = mel_chunks[:len(full_frames)]
+ 
+ 	batch_size = args.wav2lip_batch_size
+ 	gen = datagen(full_frames.copy(), mel_chunks)
+@@ -253,8 +268,10 @@ def main():
+ 			print ("Model loaded")
+ 
+ 			frame_h, frame_w = full_frames[0].shape[:-1]
+-			out = cv2.VideoWriter('temp/result.avi', 
+-									cv2.VideoWriter_fourcc(*'DIVX'), fps, (frame_w, frame_h))
++			out = cv2.VideoWriter('temp/result.avi', cv2.CAP_FFMPEG,
++									cv2.VideoWriter_fourcc(*'MJPG'), fps, (frame_w, frame_h))
++			if not out.isOpened():
++				raise RuntimeError('OpenCV FFmpeg VideoWriter could not create temp/result.avi')
+ 
+ 		img_batch = torch.FloatTensor(np.transpose(img_batch, (0, 3, 1, 2))).to(device)
+ 		mel_batch = torch.FloatTensor(np.transpose(mel_batch, (0, 3, 1, 2))).to(device)
+@@ -265,16 +282,16 @@ def main():
+ 		pred = pred.cpu().numpy().transpose(0, 2, 3, 1) * 255.
+ 		
+ 		for p, f, c in zip(pred, frames, coords):
+-			y1, y2, x1, x2 = c
+-			p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
+-
+-			f[y1:y2, x1:x2] = p
++			if c is not None:
++				y1, y2, x1, x2 = c
++				p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
++				f[y1:y2, x1:x2] = p
+ 			out.write(f)
+ 
+ 	out.release()
+ 
+ 	command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(args.audio, 'temp/result.avi', args.outfile)
+-	subprocess.call(command, shell=platform.system() != 'Windows')
++	subprocess.check_call(command, shell=platform.system() != 'Windows')
+ 
+ if __name__ == '__main__':
+ 	main()

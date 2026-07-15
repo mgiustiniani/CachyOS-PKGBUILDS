@@ -99,8 +99,9 @@ synapse-dub generative source.mp4 \
 
 This creates new visual frames rather than preserving the source footage. The
 source contributes timing, speech, voices, and a reference frame for each
-five-second generated shot. Use `--backend none` for scenes without a suitable
-visible face. Generation parameters and the pinned model revision are recorded
+five-second generated shot. Wav2Lip modifies frames containing a detected face
+and preserves frames without one; use `--backend none` when lip synchronization
+is not appropriate. Generation parameters and the pinned model revision are recorded
 in `generative-visual.generation.json`.
 
 ## Translate an authorized YouTube video
