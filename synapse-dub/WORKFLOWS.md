@@ -50,11 +50,15 @@ silently assigned to a voice.
 pre-labelled script remains available when credentials or model access are not
 available.
 
-## Not implemented
+### 9. Generative visual production
 
-### Generative visual video-to-video
+`synapse-dub generative VIDEO --visual-prompt BRIEF` invokes the separately
+packaged `synapse-video-gen-rocm` Wan2.1 VACE backend before dialogue synthesis.
+It generates new visual shots from source reference frames, optionally writes
+new dialogue with `--dialogue-prompt`, clones the confirmed voices, optionally
+applies Wav2Lip, and muxes the final result. Unlike `custom`, this workflow
+creates new frames, scenes, actions, backgrounds, and camera motion.
 
-A workflow that creates new frames, actions, backgrounds, camera motion, or
-characters from real footage is not implemented. It requires a separately
-packaged ROCm video-to-video backend and must precede the existing dialogue,
-voice-cloning, lip-sync, and mux stages.
+The 1.3B backend generates independent shots of up to five seconds and joins
+them. Longer scenes can therefore contain identity or continuity changes. The
+source supplies one visual reference per shot rather than preserved motion.

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo='Wan-AI/Wan2.1-VACE-1.3B-diffusers'
+revision='ec4d2cb062b548996b179d493fdd05340de702a1'
+root='/var/lib/synapse/video-gen/models/wan-vace-1.3b'
+action=${1:-}
+[[ $# -gt 0 ]] && shift
+while (($#)); do
+  case "$1" in
+    --root) root=$2; shift 2 ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+validate() {
+  local missing=0 file
+  for file in model_index.json scheduler/scheduler_config.json text_encoder/config.json \
+              tokenizer/spiece.model transformer/config.json vae/config.json \
+              vae/diffusion_pytorch_model.safetensors; do
+    if [[ ! -f "$root/$file" ]]; then
+      echo "Missing: $root/$file" >&2
+      missing=1
+    fi
+  done
+  compgen -G "$root/text_encoder/*.safetensors" >/dev/null || { echo "Missing text encoder weights" >&2; missing=1; }
+  compgen -G "$root/transformer/*.safetensors" >/dev/null || { echo "Missing transformer weights" >&2; missing=1; }
+  [[ $missing -eq 0 ]] || return 1
+  if [[ -f "$root/.snapshot-revision" ]] && [[ $(<"$root/.snapshot-revision") != "$revision" ]]; then
+    echo "Unexpected model revision in $root/.snapshot-revision" >&2
+    return 1
+  fi
+  echo "Wan2.1 VACE model valid: $root"
+}
+
+case "$action" in
+  download)
+    command -v hf >/dev/null || { echo "The huggingface-hub CLI is required" >&2; exit 1; }
+    install -d -m 0755 "$root"
+    hf download "$repo" --revision "$revision" --local-dir "$root"
+    printf '%s\n' "$revision" >"$root/.snapshot-revision"
+    validate
+    ;;
+  validate)
+    validate
+    ;;
+  *)
+    echo "Usage: synapse-video-gen-models {download|validate} [--root DIR]" >&2
+    exit 2
+    ;;
+esac

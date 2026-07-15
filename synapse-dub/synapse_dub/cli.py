@@ -546,6 +546,9 @@ def assemble_timeline(generated: list[tuple[dict[str, Any], Path]], output: Path
 
 
 def lipsync(backend: str, video: Path, audio: Path, output: Path, config: dict[str, str]) -> None:
+    if backend == "none":
+        shutil.copyfile(video, output)
+        return
     python = sys.executable
     if backend != "wav2lip":
         raise ValueError(f"Unsupported lip-sync backend in this release: {backend}")
@@ -654,8 +657,9 @@ def command_prepare(args: argparse.Namespace) -> int:
     return 0
 
 
-def command_run(args: argparse.Namespace) -> int:
-    workspace, script, mapping = prepare(args)
+def complete_dub(
+    args: argparse.Namespace, workspace: Path, script: dict[str, Any], mapping: dict[str, str]
+) -> int:
     config = load_config()
     endpoint = args.translation_endpoint or config.get("TRANSLATION_ENDPOINT", "http://127.0.0.1:8000/v1")
     model = args.translation_model or config.get("TRANSLATION_MODEL", "deepseek-v4-flash")
@@ -689,6 +693,29 @@ def command_run(args: argparse.Namespace) -> int:
     mux(synced_video, dubbed_audio, args.output.resolve())
     print(args.output.resolve())
     return 0
+
+
+def command_run(args: argparse.Namespace) -> int:
+    workspace, script, mapping = prepare(args)
+    return complete_dub(args, workspace, script, mapping)
+
+
+def command_generative(args: argparse.Namespace) -> int:
+    require_command("synapse-video-gen")
+    workspace, script, mapping = prepare(args)
+    generated_video = workspace / "generative-visual.mp4"
+    command = [
+        "synapse-video-gen", "generate", "--input", str(args.video.resolve()),
+        "--prompt", args.visual_prompt, "--output", str(generated_video),
+        "--width", str(args.visual_width), "--height", str(args.visual_height),
+        "--fps", str(args.visual_fps), "--steps", str(args.visual_steps),
+        "--seed", str(args.visual_seed), "--max-duration", str(args.visual_max_duration),
+    ]
+    if args.force or not generated_video.is_file():
+        run(command)
+    args.video = generated_video
+    args.custom_prompt = args.dialogue_prompt
+    return complete_dub(args, workspace, script, mapping)
 
 
 def command_youtube(args: argparse.Namespace) -> int:
@@ -731,7 +758,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--target-language", help="Enable optional translation and set XTTS output language")
     run_parser.add_argument("--translation-endpoint")
     run_parser.add_argument("--translation-model")
-    run_parser.add_argument("--backend", choices=("wav2lip",), default="wav2lip")
+    run_parser.add_argument("--backend", choices=("wav2lip", "none"), default="wav2lip")
     run_parser.add_argument("--output", type=Path, required=True)
     run_parser.set_defaults(handler=command_run, custom_prompt=None)
 
@@ -743,7 +770,7 @@ def build_parser() -> argparse.ArgumentParser:
     custom_parser.add_argument("--target-language", required=True, help="Language of the new dialogue")
     custom_parser.add_argument("--translation-endpoint")
     custom_parser.add_argument("--translation-model")
-    custom_parser.add_argument("--backend", choices=("wav2lip",), default="wav2lip")
+    custom_parser.add_argument("--backend", choices=("wav2lip", "none"), default="wav2lip")
     custom_parser.add_argument("--output", type=Path, required=True)
     custom_parser.set_defaults(handler=command_run)
 
@@ -757,9 +784,28 @@ def build_parser() -> argparse.ArgumentParser:
     youtube_parser.add_argument("--target-language", required=True)
     youtube_parser.add_argument("--translation-endpoint")
     youtube_parser.add_argument("--translation-model")
-    youtube_parser.add_argument("--backend", choices=("wav2lip",), default="wav2lip")
+    youtube_parser.add_argument("--backend", choices=("wav2lip", "none"), default="wav2lip")
     youtube_parser.add_argument("--output", type=Path, required=True)
     youtube_parser.set_defaults(handler=command_youtube, custom_prompt=None)
+
+    generative_parser = subparsers.add_parser(
+        "generative", help="Generate new visual scenes, dialogue, cloned voices, and final video"
+    )
+    add_prepare_arguments(generative_parser)
+    generative_parser.add_argument("--visual-prompt", required=True)
+    generative_parser.add_argument("--dialogue-prompt", help="Optional creative brief replacing source dialogue")
+    generative_parser.add_argument("--target-language", required=True)
+    generative_parser.add_argument("--translation-endpoint")
+    generative_parser.add_argument("--translation-model")
+    generative_parser.add_argument("--backend", choices=("wav2lip", "none"), default="wav2lip")
+    generative_parser.add_argument("--visual-width", type=int, default=832)
+    generative_parser.add_argument("--visual-height", type=int, default=480)
+    generative_parser.add_argument("--visual-fps", type=int, default=16)
+    generative_parser.add_argument("--visual-steps", type=int, default=30)
+    generative_parser.add_argument("--visual-seed", type=int, default=42)
+    generative_parser.add_argument("--visual-max-duration", type=float, default=60.0)
+    generative_parser.add_argument("--output", type=Path, required=True)
+    generative_parser.set_defaults(handler=command_generative, custom_prompt=None)
     return parser
 
 

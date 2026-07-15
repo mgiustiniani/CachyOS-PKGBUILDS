@@ -82,6 +82,27 @@ For unattended operation, prepare and manually review a map first, then pass it
 with `--speaker-map FILE`. A non-interactive invocation without a confirmed map
 is rejected.
 
+## Fully generative visual production
+
+Install and provision the shared Wan2.1 VACE ROCm backend, normally through
+Calamares Server Setup, then run:
+
+```sh
+synapse-dub generative source.mp4 \
+  --workspace generative-work \
+  --visual-prompt 'A robot detective crosses a rainy neon city, cinematic tracking shot' \
+  --dialogue-prompt 'Write a tense exchange about a missing artificial intelligence' \
+  --target-language it \
+  --backend wav2lip \
+  --output generative-final.mp4
+```
+
+This creates new visual frames rather than preserving the source footage. The
+source contributes timing, speech, voices, and a reference frame for each
+five-second generated shot. Use `--backend none` for scenes without a suitable
+visible face. Generation parameters and the pinned model revision are recorded
+in `generative-visual.generation.json`.
+
 ## Translate an authorized YouTube video
 
 The repository `yt-dlp` package downloads one video; playlists are disabled.
