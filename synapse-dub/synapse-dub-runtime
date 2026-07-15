@@ -68,7 +68,6 @@ pysbd|pysbd==0.3.4
 gruut_ipa|gruut-ipa==0.13.0
 gruut_lang_en|gruut-lang-en==2.0.1
 gruut|gruut==2.4.0
-docopt|docopt==0.6.2
 encodec|encodec==0.1.1
 bangla|bangla==0.0.5
 bnnumerizer|bnnumerizer==0.0.2
@@ -76,8 +75,6 @@ bnunicodenormalizer|bnunicodenormalizer==0.1.7
 hangul_romanize|hangul-romanize==0.1.0
 ko_speech_tools|ko-speech-tools==0.1.0
 jamo|jamo==0.4.1
-jieba|jieba==0.42.1
-pypinyin|pypinyin==0.55.0
 pyannote.audio|pyannote-audio==4.0.7
 asteroid_filterbanks|asteroid-filterbanks==0.4.0
 lightning_utilities|lightning-utilities==0.15.2

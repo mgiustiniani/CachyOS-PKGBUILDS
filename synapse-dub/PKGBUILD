@@ -2,7 +2,7 @@
 
 pkgname=synapse-dub
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='ROCm video dubbing pipeline with explicit multi-speaker voice mapping'
 arch=('x86_64')
 url='https://synapseos.it'
@@ -36,6 +36,9 @@ depends=(
   'python-matplotlib'
   'python-fsspec'
   'python-inflect'
+  'python-docopt'
+  'python-jieba'
+  'pypinyin'
   'python-pandas'
   'python-scikit-learn'
   'python-scikit-image'
@@ -79,7 +82,7 @@ sha256sums=('4bc8608597f3c31ec23ad7252134425f2b2ce777bf28df2623422f4b2649fe5b'
             '0a31dc9e738fbfa8beaca734b1a39ba24d10067dada63e567096709292600bf8'
             '448a1f9438931f939098ffdbcf6ce4f30bfc6d4e6fc3d0ca60048074619a2ff6'
             '85833938f9a850ac8e7cd76bfd04b996305eb8641a13b7d0e953d39ec3be6e54'
-            '93e7642d875d50c0398165a153c8cb5e119cb7023792dd19502b6abe7b424278'
+            '0a9f03935bfec4ef23c2d9b01e1956d49e293faf4567ee3e06f484e659dadde6'
             '293ec2ab21db0187115b53468dfc42745476e66a6e18f7f8b97c7492bd9c55ff'
             '84dac3f7c85ed298ef7fa65558ca72c8f287ca6714324d94f97039a355f6bae6'
             '15bcc6e8d175f696d4f5207577a630d97ba4dae3fffcda9f2529693f4108fe2f'
