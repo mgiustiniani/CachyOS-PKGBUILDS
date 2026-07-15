@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export PYTHONPATH="/usr/lib/synapse-voice-ai/python:/usr/lib/synapse-voice-ai${PYTHONPATH:+:$PYTHONPATH}"
+set -a
+source /etc/synapse/voice-ai/models.conf
+set +a
+exec /usr/bin/python -m uvicorn synapse_voice.api:app \
+  --host "${VOICE_BIND:-127.0.0.1}" --port "${VOICE_PORT:-8090}"

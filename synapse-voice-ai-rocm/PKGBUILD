@@ -1,0 +1,120 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+
+pkgname=synapse-voice-ai-rocm
+pkgver=0.1.0
+pkgrel=3
+pkgdesc='Local multilingual voice cloning, TTS, and Whisper ASR for Synapse Linux ROCm systems'
+arch=('x86_64')
+url='https://github.com/resemble-ai/chatterbox'
+license=('MIT')
+install=synapse-voice-ai-rocm.install
+backup=('etc/synapse/voice-ai/models.conf')
+
+depends=(
+  'python'
+  'python-pytorch-opt-rocm'
+  'python-transformers'
+  'python-tokenizers'
+  'python-librosa'
+  'python-numpy'
+  'python-scipy'
+  'python-soundfile'
+  'python-omegaconf'
+  'python-pykakasi'
+  'python-huggingface-hub'
+  'python-fastapi'
+  'python-httpx'
+  'python-onnx'
+  'python-tqdm'
+  'ffmpeg'
+  'whisper-cpp'
+  'ggml-rocm'
+  'rocm-core'
+)
+makedepends=('uv' 'gcc' 'python-setuptools')
+
+_torchaudio_wheel='torchaudio-2.11.0+rocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl'
+source=(
+  "${_torchaudio_wheel}::https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.11.0%2Brocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl"
+  'models.conf'
+  'chatterbox-local-models.patch'
+  'torchaudio-extension-free.patch'
+  'synapse-voice-api'
+  'synapse-voice-tts'
+  'synapse-voice-transcribe'
+  'synapse-voice-enroll'
+  'synapse-voice-import-models'
+  'synapse-voice-api.service'
+  'synapse-voice-ai-rocm.install'
+  'README.synapse.md'
+)
+sha256sums=('660fd5e4ef538b674415f2990524f55fb18b44c9b540a153ebadf4646154e2be'
+            '156074498cda793532394e9df902ebac974449dcadd5d506a364a5c8d5cb1866'
+            'e6d5fad2a067addb889c4774eab4867b2414087624f9b9973d72b201ec0827d3'
+            '268f4404724cf03b17d0306f3c2d5d962fce3696133bc1102a20e95a2b5e7a6d'
+            '26a74da6c8b33cfa723638aa56fde59e81dc162474c0ec7e67242d66bed38788'
+            '7b05d7d97075571897d86ed2a18f33a5079f576e95e1bf7fcff346d18285c5fd'
+            '4c6e01aee8ca429a25c674edad7ae56e06ea49d77d4074664a0fe2f9c94f0c05'
+            'a1c8c3a3b936c9b86031e39f4c38ef2f47a808519538683c91cd7f34ba233cca'
+            'e8f65e57538e420aef3dca925cd859313f55cd5770eca99cac7804d18ea4736a'
+            '8f8f58cb638de9efe2414e96918341aad8e3b2fce890a572d4976267a4cd449e'
+            '406e6c98ec383d829612193af22449adfde238351ba092a4705ae6ce0771503c'
+            '02789bd6d00fe032051ab836c64b1cb23c23aa0c411f5efe2a1fcf4968d6cc1f')
+
+build() {
+  local vendor="$srcdir/python-vendor"
+  rm -rf "$vendor"
+  mkdir -p "$vendor"
+
+  UV_LINK_MODE=copy uv pip install --python /usr/bin/python --target "$vendor" --no-deps \
+    'chatterbox-tts==0.1.7' \
+    's3tokenizer==0.3.0' \
+    'resemble-perth==1.0.1' \
+    'conformer==0.3.2' \
+    'spacy-pkuseg==1.0.1' \
+    'srsly==2.5.2' \
+    'pyloudnorm==0.2.0' \
+    'diffusers==0.29.0' \
+    'einops==0.8.2' \
+    'safetensors==0.5.3' \
+    'tokenizers==0.22.2' \
+    'uvicorn==0.41.0' \
+    'python-multipart==0.0.22' \
+    'click==8.4.2' \
+    'h11==0.16.0'
+
+  patch -l -d "$vendor" -p1 < "$srcdir/chatterbox-local-models.patch"
+  bsdtar -xf "$srcdir/${_torchaudio_wheel}" -C "$vendor"
+  patch -d "$vendor" -p1 < "$srcdir/torchaudio-extension-free.patch"
+  rm -rf "$vendor/bin" "$vendor/.lock" "$vendor/torchaudio/lib"
+}
+
+package() {
+  local appdir="$pkgdir/usr/lib/synapse-voice-ai"
+
+  install -dm755 "$appdir/python" "$appdir/synapse_voice"
+  cp -a "$srcdir/python-vendor/." "$appdir/python/"
+  install -Dm644 "$startdir/synapse_voice/__init__.py" "$appdir/synapse_voice/__init__.py"
+  install -Dm644 "$startdir/synapse_voice/config.py" "$appdir/synapse_voice/config.py"
+  install -Dm644 "$startdir/synapse_voice/engine.py" "$appdir/synapse_voice/engine.py"
+  install -Dm644 "$startdir/synapse_voice/api.py" "$appdir/synapse_voice/api.py"
+  install -Dm644 "$startdir/synapse_voice/cli.py" "$appdir/synapse_voice/cli.py"
+  install -Dm644 "$startdir/synapse_voice/import_models.py" "$appdir/synapse_voice/import_models.py"
+
+  install -Dm644 "$srcdir/models.conf" "$pkgdir/etc/synapse/voice-ai/models.conf"
+  install -Dm755 "$srcdir/synapse-voice-api" "$pkgdir/usr/bin/synapse-voice-api"
+  install -Dm755 "$srcdir/synapse-voice-tts" "$pkgdir/usr/bin/synapse-voice-tts"
+  install -Dm755 "$srcdir/synapse-voice-transcribe" "$pkgdir/usr/bin/synapse-voice-transcribe"
+  install -Dm755 "$srcdir/synapse-voice-enroll" "$pkgdir/usr/bin/synapse-voice-enroll"
+  install -Dm755 "$srcdir/synapse-voice-import-models" "$pkgdir/usr/bin/synapse-voice-import-models"
+  install -Dm644 "$srcdir/synapse-voice-api.service" "$pkgdir/usr/lib/systemd/user/synapse-voice-api.service"
+
+  install -dm755 "$pkgdir/var/lib/synapse/voice-ai/models"
+  install -Dm644 "$srcdir/README.synapse.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+  local license_file
+  license_file=$(find "$srcdir/python-vendor" -path '*chatterbox_tts-*.dist-info/licenses/LICENSE' -print -quit)
+  if [[ -n "$license_file" ]]; then
+    install -Dm644 "$license_file" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  fi
+}

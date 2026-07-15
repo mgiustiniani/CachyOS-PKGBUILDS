@@ -1,0 +1,14 @@
+[Unit]
+Description=Synapse Voice AI API
+After=pipewire.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/synapse-voice-api
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

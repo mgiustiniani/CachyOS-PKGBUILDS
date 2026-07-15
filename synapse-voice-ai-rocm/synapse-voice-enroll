@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: synapse-voice-enroll <voice-id> <reference-audio>" >&2
+  exit 2
+}
+
+[[ $# -eq 2 ]] || usage
+voice_id=$1
+source_audio=$2
+[[ "$voice_id" =~ ^[A-Za-z0-9_-]+$ ]] || {
+  echo "Voice id may contain only letters, numbers, underscores, and dashes." >&2
+  exit 2
+}
+[[ -f "$source_audio" ]] || { echo "Reference audio not found: $source_audio" >&2; exit 1; }
+
+duration=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$source_audio")
+awk -v d="$duration" 'BEGIN { exit !(d >= 3.0) }' || {
+  echo "Reference audio must be at least 3 seconds long." >&2
+  exit 1
+}
+
+data_home=${XDG_DATA_HOME:-$HOME/.local/share}
+destination="$data_home/synapse/voice-ai/voices"
+install -d -m 0700 "$destination"
+ffmpeg -nostdin -loglevel error -y -i "$source_audio" -t 10 -ar 24000 -ac 1 \
+  "$destination/$voice_id.wav"
+chmod 0600 "$destination/$voice_id.wav"
+echo "$destination/$voice_id.wav"

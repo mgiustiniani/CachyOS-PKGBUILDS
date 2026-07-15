@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/synapse/voice-ai/models.conf
+export PYTHONPATH="/usr/lib/synapse-voice-ai/python:/usr/lib/synapse-voice-ai${PYTHONPATH:+:$PYTHONPATH}"
+WHISPER_MODEL=$(/usr/bin/python - <<'PY'
+from synapse_voice.config import resolve_model_paths
+print(resolve_model_paths()[1])
+PY
+)
+exec /usr/bin/whisper-cli -m "$WHISPER_MODEL" "$@"

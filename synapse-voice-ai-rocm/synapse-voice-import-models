@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export PYTHONPATH="/usr/lib/synapse-voice-ai/python:/usr/lib/synapse-voice-ai${PYTHONPATH:+:$PYTHONPATH}"
+exec /usr/bin/python -m synapse_voice.import_models "$@"
