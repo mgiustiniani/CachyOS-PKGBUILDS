@@ -113,6 +113,20 @@ def normalize_script(data: Any) -> dict[str, Any]:
     return {"language": data.get("language"), "segments": segments}
 
 
+def media_duration(path: Path) -> float:
+    result = run(
+        [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=nw=1:nk=1", str(path),
+        ],
+        capture=True,
+    )
+    duration = float(result.stdout.strip())
+    if duration <= 0:
+        raise RuntimeError(f"Media has no positive duration: {path}")
+    return duration
+
+
 def extract_audio(video: Path, output: Path) -> None:
     require_command("ffmpeg")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -374,12 +388,21 @@ def map_speakers_interactively(
 def translate_script(
     script: dict[str, Any], target_language: str, endpoint: str, model: str, api_key: str | None
 ) -> dict[str, Any]:
-    texts = [segment["text"] for segment in script["segments"]]
+    source = [
+        {
+            "text": segment["text"],
+            "duration_seconds": round(float(segment["end"]) - float(segment["start"]), 3),
+            "max_characters": max(8, round((float(segment["end"]) - float(segment["start"])) * 13)),
+        }
+        for segment in script["segments"]
+    ]
     language = language_description(target_language)
     prompt = (
-        f"Translate each JSON string to {language}. Return only a JSON array with exactly "
-        f"{len(texts)} strings in the same order. Preserve names and meaning. Input: "
-        + json.dumps(texts, ensure_ascii=False)
+        f"Translate each timed spoken line to {language}. Return only a JSON array with exactly "
+        f"{len(source)} strings in the same order. Each translation must sound natural when spoken, "
+        "must fit comfortably inside duration_seconds, and must not exceed max_characters. "
+        "Compress wording while preserving the essential meaning and names. Input: "
+        + json.dumps(source, ensure_ascii=False)
     )
     payload = json.dumps(
         {
@@ -399,13 +422,13 @@ def translate_script(
             **({"Authorization": f"Bearer {api_key}"} if api_key else {}),
         },
     )
-    with urllib.request.urlopen(request, timeout=300) as response:
+    with urllib.request.urlopen(request, timeout=900) as response:
         body = json.load(response)
     content = body["choices"][0]["message"]["content"].strip()
     if content.startswith("```"):
         content = content.split("\n", 1)[1].rsplit("```", 1)[0]
     translated = json.loads(content)
-    if not isinstance(translated, list) or len(translated) != len(texts):
+    if not isinstance(translated, list) or len(translated) != len(source):
         raise RuntimeError("Translation endpoint returned an invalid segment list")
     output = json.loads(json.dumps(script))
     output["language"] = target_language
@@ -472,6 +495,30 @@ def customize_script(
     return output
 
 
+def coalesce_synthesis_segments(script: dict[str, Any], max_gap: float = 0.25) -> dict[str, Any]:
+    output = json.loads(json.dumps(script))
+    merged: list[dict[str, Any]] = []
+    for source in output["segments"]:
+        segment = dict(source)
+        if (
+            merged
+            and merged[-1]["speaker"] == segment["speaker"]
+            and float(segment["start"]) - float(merged[-1]["end"]) <= max_gap
+        ):
+            previous = merged[-1]
+            previous["text"] = (str(previous["text"]).rstrip() + " " + str(segment["text"]).lstrip()).strip()
+            previous["end"] = segment["end"]
+            if "source_text" in previous or "source_text" in segment:
+                previous["source_text"] = (
+                    str(previous.get("source_text", "")).rstrip()
+                    + " " + str(segment.get("source_text", "")).lstrip()
+                ).strip()
+        else:
+            merged.append(segment)
+    output["segments"] = merged
+    return output
+
+
 def xtts_synthesize(
     script: dict[str, Any], mapping: dict[str, str], directory: Path, language: str
 ) -> list[tuple[dict[str, Any], Path]]:
@@ -517,6 +564,8 @@ def normalize_clip(source: Path, destination: Path, sample_rate: int = 24000) ->
             "-y",
             "-i",
             str(source),
+            "-filter:a",
+            "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-45dB:stop_periods=-1:stop_duration=0.10:stop_threshold=-45dB",
             "-ar",
             str(sample_rate),
             "-ac",
@@ -528,23 +577,58 @@ def normalize_clip(source: Path, destination: Path, sample_rate: int = 24000) ->
     )
 
 
-def assemble_timeline(generated: list[tuple[dict[str, Any], Path]], output: Path) -> None:
+def read_pcm16(path: Path) -> array:
+    with wave.open(str(path), "rb") as stream:
+        if stream.getsampwidth() != 2 or stream.getnchannels() != 1:
+            raise RuntimeError(f"Unexpected normalized WAV format: {path}")
+        values = array("h")
+        values.frombytes(stream.readframes(stream.getnframes()))
+        return values
+
+
+def atempo_chain(speed: float) -> str:
+    factors: list[float] = []
+    while speed > 2.0:
+        factors.append(2.0)
+        speed /= 2.0
+    factors.append(speed)
+    return ",".join(f"atempo={factor:.8f}" for factor in factors)
+
+
+def assemble_timeline(
+    generated: list[tuple[dict[str, Any], Path]], output: Path, minimum_duration: float = 0.0
+) -> None:
     sample_rate = 24000
     normalized_dir = output.parent / "normalized"
     normalized_dir.mkdir(parents=True, exist_ok=True)
     clips: list[tuple[int, array]] = []
-    final_samples = 0
+    final_samples = round(minimum_duration * sample_rate)
     for index, (segment, source) in enumerate(generated):
         normalized = normalized_dir / f"{index:05d}.wav"
         normalize_clip(source, normalized, sample_rate)
-        with wave.open(str(normalized), "rb") as stream:
-            if stream.getsampwidth() != 2 or stream.getnchannels() != 1:
-                raise RuntimeError(f"Unexpected normalized WAV format: {normalized}")
-            values = array("h")
-            values.frombytes(stream.readframes(stream.getnframes()))
-        offset = int(float(segment["start"]) * sample_rate)
+        values = read_pcm16(normalized)
+        start = float(segment["start"])
+        end = float(segment["end"])
+        slot_samples = max(1, round((end - start) * sample_rate))
+        if len(values) > slot_samples:
+            speed = len(values) / slot_samples
+            fitted = normalized_dir / f"{index:05d}-fitted.wav"
+            print(
+                f"Fitting segment {index}: {len(values) / sample_rate:.3f}s -> "
+                f"{slot_samples / sample_rate:.3f}s ({speed:.3f}x)", file=sys.stderr,
+            )
+            run(
+                [
+                    "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", str(normalized),
+                    "-filter:a", f"{atempo_chain(speed)},atrim=duration={slot_samples / sample_rate:.8f}",
+                    "-ar", str(sample_rate), "-ac", "1", "-c:a", "pcm_s16le", str(fitted),
+                ]
+            )
+            values = read_pcm16(fitted)
+        values = values[:slot_samples]
+        offset = round(start * sample_rate)
         clips.append((offset, values))
-        final_samples = max(final_samples, offset + len(values))
+        final_samples = max(final_samples, round(end * sample_rate))
     mix = array("h", [0]) * final_samples
     for offset, values in clips:
         for index, value in enumerate(values):
@@ -699,9 +783,15 @@ def complete_dub(
     language = args.target_language or script.get("language") or args.source_language
     if not language:
         raise RuntimeError("XTTS language is unknown; set --target-language or --source-language")
-    generated = xtts_synthesize(script, mapping, workspace / "tts-segments", language)
+    synthesis_script = coalesce_synthesis_segments(script)
+    if len(synthesis_script["segments"]) != len(script["segments"]):
+        print(
+            f"Coalesced {len(script['segments'])} transcript segments into "
+            f"{len(synthesis_script['segments'])} speaker utterances", file=sys.stderr,
+        )
+    generated = xtts_synthesize(synthesis_script, mapping, workspace / "tts-segments", language)
     dubbed_audio = workspace / "dubbed.wav"
-    assemble_timeline(generated, dubbed_audio)
+    assemble_timeline(generated, dubbed_audio, media_duration(args.video.resolve()))
     synced_video = workspace / f"lipsync-{args.backend}.mp4"
     lipsync(args.backend, args.video.resolve(), dubbed_audio, synced_video, config)
     mux(synced_video, dubbed_audio, args.output.resolve())

@@ -80,7 +80,9 @@ synapse-dub custom real-video.mp4 \
 
 For unattended operation, prepare and manually review a map first, then pass it
 with `--speaker-map FILE`. A non-interactive invocation without a confirmed map
-is rejected.
+is rejected. Translation prompts include each source time slot and a spoken-text
+budget. Synthesized clips are pitch-preservingly fitted and hard-limited to their
+own slots, so adjacent speakers or lines cannot overlap.
 
 ## Fully generative visual production
 

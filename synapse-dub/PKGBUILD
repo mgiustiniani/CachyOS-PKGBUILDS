@@ -2,7 +2,7 @@
 
 pkgname=synapse-dub
 pkgver=0.4.0
-pkgrel=5
+pkgrel=7
 pkgdesc='ROCm video dubbing pipeline with explicit multi-speaker voice mapping'
 arch=('x86_64')
 url='https://synapseos.it'
@@ -85,7 +85,7 @@ sha256sums=('4bc8608597f3c31ec23ad7252134425f2b2ce777bf28df2623422f4b2649fe5b'
             '93ec0823629a9b120152e721858344308d8221cf2df398a2e1eda665568b4a4e'
             'a58814742425829865d168e3a654291efb6bbb8bf1b74c2c3d564a3dce8292b1'
             '107a8b438aab2bbd18ddaa21cb08e53931f4bf50f41d45fa8b0db688d72d7666'
-            '4f945a760f074fc9a85d101fda5ac9d36743a9219a5f35884aff6fa4f5b5146d'
+            '170fc38575597201de272226008c26ae9ff6ebe39b32c0b8aaec022820992f35'
             '2f88d98ebf91cf12c7eb63cedd848800b3c05b5dc64d77f093f8063cdb71de09')
 
 prepare() {
