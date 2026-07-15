@@ -1,7 +1,7 @@
 pkgbase = synapse-dub
 	pkgdesc = ROCm video dubbing pipeline with explicit multi-speaker voice mapping
 	pkgver = 0.4.0
-	pkgrel = 3
+	pkgrel = 4
 	url = https://synapseos.it
 	install = synapse-dub.install
 	arch = x86_64

@@ -17,6 +17,18 @@ from typing import Any
 
 CONFIG_PATH = Path("/etc/synapse/dub/config.conf")
 BACKEND_ROOT = Path("/opt/synapse-dub/backends")
+LANGUAGE_NAMES = {
+    "de": "German", "en": "English", "es": "Spanish", "fr": "French",
+    "it": "Italian", "ja": "Japanese", "ko": "Korean", "pt": "Portuguese",
+    "ru": "Russian", "zh": "Chinese",
+}
+
+
+def language_description(code: str) -> str:
+    normalized = code.strip().lower().replace("_", "-")
+    base = normalized.split("-", 1)[0]
+    name = LANGUAGE_NAMES.get(base)
+    return f"{name} (language code: {code})" if name else f"language code {code}"
 
 
 def load_config(path: Path = CONFIG_PATH) -> dict[str, str]:
@@ -363,8 +375,9 @@ def translate_script(
     script: dict[str, Any], target_language: str, endpoint: str, model: str, api_key: str | None
 ) -> dict[str, Any]:
     texts = [segment["text"] for segment in script["segments"]]
+    language = language_description(target_language)
     prompt = (
-        f"Translate each JSON string to {target_language}. Return only a JSON array with exactly "
+        f"Translate each JSON string to {language}. Return only a JSON array with exactly "
         f"{len(texts)} strings in the same order. Preserve names and meaning. Input: "
         + json.dumps(texts, ensure_ascii=False)
     )
@@ -413,8 +426,9 @@ def customize_script(
         }
         for segment in script["segments"]
     ]
+    language = language_description(target_language)
     prompt = (
-        f"Rewrite the dialogue as a completely new audiovisual scene in {target_language}. "
+        f"Rewrite the dialogue as a completely new audiovisual scene in {language}. "
         "Follow the creative brief, preserve the exact segment count and speaker order, and keep "
         "every rewritten line short enough for its duration. Return only a JSON array of strings. "
         f"Creative brief: {brief}\nSource timing and dialogue: "
