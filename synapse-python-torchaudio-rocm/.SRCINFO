@@ -1,0 +1,18 @@
+pkgbase = synapse-python-torchaudio-rocm
+	pkgdesc = ROCm TorchAudio runtime for Synapse Python 3.14 AI applications
+	pkgver = 2.11.0
+	pkgrel = 1
+	url = https://pytorch.org/audio/stable/index.html
+	arch = x86_64
+	license = BSD-3-Clause
+	depends = python>=3.14
+	depends = python<3.15
+	depends = python-pytorch-opt-rocm>=2.11
+	depends = rocm-core
+	provides = python-torchaudio=2.11.0
+	conflicts = python-torchaudio
+	options = !strip
+	source = torchaudio-2.11.0+rocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl::https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.11.0%2Brocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl
+	sha256sums = 660fd5e4ef538b674415f2990524f55fb18b44c9b540a153ebadf4646154e2be
+
+pkgname = synapse-python-torchaudio-rocm

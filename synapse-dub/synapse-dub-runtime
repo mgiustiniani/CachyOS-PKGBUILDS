@@ -36,16 +36,9 @@ esac
 mkdir -p "$runtime_home"
 uv venv --system-site-packages --clear "$venv"
 
-# CachyOS currently has no python-torchaudio package. XTTS and pyannote use only
-# its Python resampling/feature APIs, so install those modules without loading a
-# version-specific C++ extension against the system ROCm PyTorch build.
-if ! "$venv/bin/python" -c 'import torchaudio' >/dev/null 2>&1; then
-  wheel='https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.11.0%2Brocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl'
-  UV_LINK_MODE=copy uv pip install --python "$venv/bin/python" --no-deps "$wheel"
-  extension="$venv/lib/python3.14/site-packages/torchaudio/_extension/__init__.py"
-  sed -i 's/_IS_TORCHAUDIO_EXT_AVAILABLE = _load_lib("_torchaudio")/_IS_TORCHAUDIO_EXT_AVAILABLE = False/' "$extension"
-  rm -rf "$venv/lib/python3.14/site-packages/torchaudio/lib"
-fi
+# TorchAudio is provided by the separate synapse-python-torchaudio-rocm pacman
+# package. This runtime must never download or vendor compiled ROCm components.
+"$venv/bin/python" -c 'import torchaudio'
 
 # Only projects unavailable as stable CachyOS packages are installed here.
 # --no-deps is intentional: system packages declared by synapse-dub must never

@@ -66,9 +66,11 @@ is rejected.
 
 The pacman package does not include FFmpeg, Python, PyTorch, ROCm, OpenCV,
 Whisper, NumPy, or other libraries available as CachyOS packages. They are
-normal `depends=()` entries. `synapse-dub-runtime` creates a user-owned venv with
-`--system-site-packages` and installs only explicitly listed projects missing
-from CachyOS, always with `--no-deps`.
+normal `depends=()` entries. The compiled ROCm TorchAudio runtime is supplied by
+the separate `synapse-python-torchaudio-rocm` pacman package. `synapse-dub-runtime`
+creates a user-owned venv with `--system-site-packages` and installs only
+explicitly listed projects missing from CachyOS, always with
+`--no-deps`; it never downloads compiled ROCm components.
 
 The Wav2Lip source tree is pinned and installed as an adapter, following the
 same source-build approach used for DS4. Model weights are external.

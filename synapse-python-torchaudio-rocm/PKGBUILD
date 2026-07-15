@@ -1,0 +1,33 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+
+pkgname=synapse-python-torchaudio-rocm
+pkgver=2.11.0
+pkgrel=1
+pkgdesc='ROCm TorchAudio runtime for Synapse Python 3.14 AI applications'
+arch=('x86_64')
+url='https://pytorch.org/audio/stable/index.html'
+license=('BSD-3-Clause')
+provides=("python-torchaudio=${pkgver}")
+conflicts=('python-torchaudio')
+depends=(
+  'python>=3.14'
+  'python<3.15'
+  'python-pytorch-opt-rocm>=2.11'
+  'rocm-core'
+)
+options=('!strip')
+
+_wheel="torchaudio-${pkgver}+rocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl"
+source=("${_wheel}::https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-${pkgver}%2Brocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl")
+sha256sums=('660fd5e4ef538b674415f2990524f55fb18b44c9b540a153ebadf4646154e2be')
+
+package() {
+  local site_packages="$pkgdir/usr/lib/python3.14/site-packages"
+  install -dm755 "$site_packages"
+  bsdtar -xf "$srcdir/$_wheel" -C "$site_packages"
+
+  install -Dm644 \
+    "$site_packages/torchaudio-${pkgver}+rocm7.1.dist-info/licenses/LICENSE" \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$startdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

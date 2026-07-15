@@ -1,0 +1,4 @@
+*.whl
+*.pkg.tar.*
+src/
+pkg/

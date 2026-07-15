@@ -2,7 +2,7 @@
 
 pkgname=synapse-voice-ai-rocm
 pkgver=0.1.0
-pkgrel=3
+pkgrel=4
 pkgdesc='Local multilingual voice cloning, TTS, and Whisper ASR for Synapse Linux ROCm systems'
 arch=('x86_64')
 url='https://github.com/resemble-ai/chatterbox'
@@ -13,6 +13,7 @@ backup=('etc/synapse/voice-ai/models.conf')
 depends=(
   'python'
   'python-pytorch-opt-rocm'
+  'synapse-python-torchaudio-rocm'
   'python-transformers'
   'python-tokenizers'
   'python-librosa'
@@ -33,12 +34,9 @@ depends=(
 )
 makedepends=('uv' 'gcc' 'python-setuptools')
 
-_torchaudio_wheel='torchaudio-2.11.0+rocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl'
 source=(
-  "${_torchaudio_wheel}::https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.11.0%2Brocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl"
   'models.conf'
   'chatterbox-local-models.patch'
-  'torchaudio-extension-free.patch'
   'synapse-voice-api'
   'synapse-voice-tts'
   'synapse-voice-transcribe'
@@ -48,10 +46,8 @@ source=(
   'synapse-voice-ai-rocm.install'
   'README.synapse.md'
 )
-sha256sums=('660fd5e4ef538b674415f2990524f55fb18b44c9b540a153ebadf4646154e2be'
-            '156074498cda793532394e9df902ebac974449dcadd5d506a364a5c8d5cb1866'
+sha256sums=('156074498cda793532394e9df902ebac974449dcadd5d506a364a5c8d5cb1866'
             'e6d5fad2a067addb889c4774eab4867b2414087624f9b9973d72b201ec0827d3'
-            '268f4404724cf03b17d0306f3c2d5d962fce3696133bc1102a20e95a2b5e7a6d'
             '26a74da6c8b33cfa723638aa56fde59e81dc162474c0ec7e67242d66bed38788'
             '7b05d7d97075571897d86ed2a18f33a5079f576e95e1bf7fcff346d18285c5fd'
             '4c6e01aee8ca429a25c674edad7ae56e06ea49d77d4074664a0fe2f9c94f0c05'
@@ -84,9 +80,7 @@ build() {
     'h11==0.16.0'
 
   patch -l -d "$vendor" -p1 < "$srcdir/chatterbox-local-models.patch"
-  bsdtar -xf "$srcdir/${_torchaudio_wheel}" -C "$vendor"
-  patch -d "$vendor" -p1 < "$srcdir/torchaudio-extension-free.patch"
-  rm -rf "$vendor/bin" "$vendor/.lock" "$vendor/torchaudio/lib"
+  rm -rf "$vendor/bin" "$vendor/.lock"
 }
 
 package() {
