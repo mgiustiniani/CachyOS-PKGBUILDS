@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root=${XDG_DATA_HOME:-$HOME/.local/share}/synapse-dub/models
+root=/var/lib/synapse/dub/models
 backend=all
 accept_noncommercial=false
 
@@ -20,7 +20,8 @@ done
 mkdir -p "$root"
 if [[ "$backend" == all || "$backend" == wav2lip ]]; then
   if ! $accept_noncommercial; then
-    echo "Wav2Lip pretrained models are non-commercial. Re-run with --accept-noncommercial after reviewing the upstream license." >&2
+    echo "Wav2Lip and XTTS-v2 models are non-commercial. License acceptance is required." >&2
+    exit 1
   else
     mkdir -p "$root/wav2lip"
     revision=bfcd9263d1ccb60ab724f074e7c1b3555f6cb162
@@ -37,10 +38,16 @@ SUMS
   fi
 fi
 
-cat <<EOF
-Models downloaded under: $root
+if [[ "$backend" == all ]]; then
+  export PYTHONPATH="/usr/lib/synapse-dub:/usr/lib/synapse-dub/python${PYTHONPATH:+:$PYTHONPATH}"
+  export TTS_HOME="$root/coqui"
+  export COQUI_TOS_AGREED=1
+  /usr/bin/python - <<'PY'
+from TTS.api import TTS
+TTS("tts_models/multilingual/multi-dataset/xtts_v2")
+print("XTTS-v2 model is ready")
+PY
+fi
 
-XTTS-v2 is downloaded by Coqui on first accepted user run and is governed by
-the non-commercial Coqui Public Model License. Set TTS_HOME or use the default
-user model directory created by /usr/bin/synapse-dub.
-EOF
+chmod -R a+rX "$root"
+echo "Models downloaded and validated under: $root"

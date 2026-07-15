@@ -3,14 +3,12 @@ post_install() {
 
 Synapse Voice AI ROCm installed.
 
-Model weights are intentionally external to the package and ISO. Mount the
-filesystem labelled "models" and validate it with:
+Model weights are intentionally external to the package and ISO. Calamares
+Server Setup can download pinned revisions from the Internet or validate an
+external archive. For manual setup, choose one mode:
 
+  sudo synapse-voice-download-models --root /var/lib/synapse/voice-ai/models
   synapse-voice-import-models
-
-To copy the selected Chatterbox and Whisper models into local storage:
-
-  sudo synapse-voice-import-models --copy
 
 Enable the per-user API after logging in:
 

@@ -42,8 +42,10 @@ A pre-labelled script can be supplied instead:
 
 ## Complete run
 
+The package contains its complete runtime. Calamares Server Setup downloads or
+validates the external models after license acceptance. Verify the installation:
+
 ```sh
-synapse-dub-runtime setup
 synapse-dub doctor
 
 synapse-dub run source.mp4 \
@@ -58,6 +60,24 @@ synapse-dub run source.mp4 \
 Translation is skipped when `--target-language` is omitted. The default endpoint
 is configurable in `/etc/synapse/dub/config.conf`.
 
+## Completely custom scene from a real video
+
+The `custom` flow keeps the source footage, timing, and speaker sequence while an
+OpenAI-compatible LLM writes entirely new timed dialogue from a creative brief.
+The generated editable manifest is saved as `WORKSPACE/dialogue-custom.json`.
+Voice mapping remains manual and mandatory before synthesis.
+
+```sh
+synapse-dub custom real-video.mp4 \
+  --workspace custom-work \
+  --diarize \
+  --samples ./samples \
+  --prompt "Turn this scene into an ironic discussion about open source." \
+  --target-language it \
+  --backend wav2lip \
+  --output custom-video-it.mp4
+```
+
 For unattended operation, prepare and manually review a map first, then pass it
 with `--speaker-map FILE`. A non-interactive invocation without a confirmed map
 is rejected.
@@ -67,10 +87,9 @@ is rejected.
 The pacman package does not include FFmpeg, Python, PyTorch, ROCm, OpenCV,
 Whisper, NumPy, or other libraries available as CachyOS packages. They are
 normal `depends=()` entries. The compiled ROCm TorchAudio runtime is supplied by
-the separate `synapse-python-torchaudio-rocm` pacman package. `synapse-dub-runtime`
-creates a user-owned venv with `--system-site-packages` and installs only
-explicitly listed projects missing from CachyOS, always with
-`--no-deps`; it never downloads compiled ROCm components.
+the separate `synapse-python-torchaudio-rocm` pacman package. Projects unavailable
+from CachyOS are pinned and installed into `/usr/lib/synapse-dub/python` at package
+build time. No runtime installer or user venv downloads compiled ROCm components.
 
 The Wav2Lip source tree is pinned and installed as an adapter, following the
 same source-build approach used for DS4. Model weights are external.

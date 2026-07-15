@@ -349,6 +349,63 @@ def translate_script(
     return output
 
 
+def customize_script(
+    script: dict[str, Any], brief: str, target_language: str, endpoint: str, model: str,
+    api_key: str | None,
+) -> dict[str, Any]:
+    source = [
+        {
+            "speaker": segment["speaker"],
+            "duration_seconds": round(float(segment["end"]) - float(segment["start"]), 3),
+            "text": segment["text"],
+        }
+        for segment in script["segments"]
+    ]
+    prompt = (
+        f"Rewrite the dialogue as a completely new audiovisual scene in {target_language}. "
+        "Follow the creative brief, preserve the exact segment count and speaker order, and keep "
+        "every rewritten line short enough for its duration. Return only a JSON array of strings. "
+        f"Creative brief: {brief}\nSource timing and dialogue: "
+        + json.dumps(source, ensure_ascii=False)
+    )
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You rewrite timed dialogue for lip-synchronized video production.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.7,
+        }
+    ).encode()
+    request = urllib.request.Request(
+        endpoint.rstrip("/") + "/chat/completions",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            **({"Authorization": f"Bearer {api_key}"} if api_key else {}),
+        },
+    )
+    with urllib.request.urlopen(request, timeout=300) as response:
+        body = json.load(response)
+    content = body["choices"][0]["message"]["content"].strip()
+    if content.startswith("```"):
+        content = content.split("\n", 1)[1].rsplit("```", 1)[0]
+    rewritten = json.loads(content)
+    if not isinstance(rewritten, list) or len(rewritten) != len(script["segments"]):
+        raise RuntimeError("Custom dialogue endpoint returned an invalid segment list")
+    output = json.loads(json.dumps(script))
+    output["language"] = target_language
+    output["custom_brief"] = brief
+    for segment, text in zip(output["segments"], rewritten, strict=True):
+        segment["source_text"] = segment["text"]
+        segment["text"] = str(text).strip()
+    return output
+
+
 def xtts_synthesize(
     script: dict[str, Any], mapping: dict[str, str], directory: Path, language: str
 ) -> list[tuple[dict[str, Any], Path]]:
@@ -363,7 +420,7 @@ def xtts_synthesize(
         import torch
         from TTS.api import TTS
     except ImportError as exc:
-        raise RuntimeError("Coqui TTS runtime is unavailable; run synapse-dub-runtime setup") from exc
+        raise RuntimeError("Coqui TTS runtime is unavailable; reinstall synapse-dub") from exc
     directory.mkdir(parents=True, exist_ok=True)
     tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
     if torch.cuda.is_available():
@@ -470,8 +527,8 @@ def doctor() -> int:
         "whisper": "python-openai-whisper",
         "torch": "python-pytorch-opt-rocm",
         "cv2": "python-opencv",
-        "TTS": "Coqui TTS runtime (synapse-dub-runtime setup)",
-        "pyannote.audio": "pyannote.audio runtime (synapse-dub-runtime setup)",
+        "TTS": "packaged Coqui TTS runtime",
+        "pyannote.audio": "packaged pyannote.audio runtime",
     }
     for module, package in imports.items():
         result = subprocess.run([sys.executable, "-c", f"import {module}"], capture_output=True)
@@ -548,12 +605,24 @@ def command_prepare(args: argparse.Namespace) -> int:
 def command_run(args: argparse.Namespace) -> int:
     workspace, script, mapping = prepare(args)
     config = load_config()
-    if args.target_language:
+    endpoint = args.translation_endpoint or config.get("TRANSLATION_ENDPOINT", "http://127.0.0.1:8000/v1")
+    model = args.translation_model or config.get("TRANSLATION_MODEL", "deepseek-v4-flash")
+    if getattr(args, "custom_prompt", None):
+        script = customize_script(
+            script,
+            args.custom_prompt,
+            args.target_language,
+            endpoint,
+            model,
+            os.environ.get("OPENAI_API_KEY"),
+        )
+        write_json(workspace / "dialogue-custom.json", script)
+    elif args.target_language:
         script = translate_script(
             script,
             args.target_language,
-            args.translation_endpoint or config.get("TRANSLATION_ENDPOINT", "http://127.0.0.1:8000/v1"),
-            args.translation_model or config.get("TRANSLATION_MODEL", "deepseek-v4-flash"),
+            endpoint,
+            model,
             os.environ.get("OPENAI_API_KEY"),
         )
         write_json(workspace / "dialogue-translated.json", script)
@@ -600,7 +669,19 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--translation-model")
     run_parser.add_argument("--backend", choices=("wav2lip",), default="wav2lip")
     run_parser.add_argument("--output", type=Path, required=True)
-    run_parser.set_defaults(handler=command_run)
+    run_parser.set_defaults(handler=command_run, custom_prompt=None)
+
+    custom_parser = subparsers.add_parser(
+        "custom", help="Create a new scripted scene from a real source video"
+    )
+    add_prepare_arguments(custom_parser)
+    custom_parser.add_argument("--prompt", dest="custom_prompt", required=True, help="Creative dialogue brief")
+    custom_parser.add_argument("--target-language", required=True, help="Language of the new dialogue")
+    custom_parser.add_argument("--translation-endpoint")
+    custom_parser.add_argument("--translation-model")
+    custom_parser.add_argument("--backend", choices=("wav2lip",), default="wav2lip")
+    custom_parser.add_argument("--output", type=Path, required=True)
+    custom_parser.set_defaults(handler=command_run)
     return parser
 
 

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config=/etc/synapse/voice-ai/models.conf
+root=/var/lib/synapse/voice-ai/models
+while (($#)); do
+  case "$1" in
+    --root) root=$2; shift 2 ;;
+    -h|--help) echo "Usage: synapse-voice-download-models [--root DIR]"; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+
+value() {
+  local key=$1 fallback=$2 result
+  result=$(awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1); exit }' "$config" 2>/dev/null || true)
+  printf '%s' "${result:-$fallback}"
+}
+
+command -v hf >/dev/null || { echo "The hf CLI from python-huggingface-hub is required." >&2; exit 1; }
+chatterbox_repo=$(value CHATTERBOX_REPO ResembleAI/chatterbox)
+chatterbox_revision=$(value CHATTERBOX_REVISION 5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18)
+whisper_repo=$(value WHISPER_REPO ggerganov/whisper.cpp)
+whisper_revision=$(value WHISPER_REVISION 5359861c739e955e79d9a303bcbc70fb988958b1)
+chatterbox_rel=$(value CHATTERBOX_MODEL_REL safetensors/voice-ai/huggingface/ResembleAI/chatterbox)
+whisper_rel=$(value WHISPER_MODEL_REL ggml/speech-recognition/whisper.cpp/ggml-large-v3-turbo-q8_0.bin)
+
+mkdir -p "$root/$chatterbox_rel" "$root/$(dirname "$whisper_rel")"
+hf download "$chatterbox_repo" --revision "$chatterbox_revision" \
+  README.md Cangjie5_TC.json conds.pt grapheme_mtl_merged_expanded_v1.json \
+  s3gen.pt t3_mtl23ls_v2.safetensors ve.pt \
+  --local-dir "$root/$chatterbox_rel"
+printf '%s\n' "$chatterbox_revision" > "$root/$chatterbox_rel/.snapshot-revision"
+hf download "$whisper_repo" --revision "$whisper_revision" \
+  ggml-large-v3-turbo-q8_0.bin --local-dir "$root/$(dirname "$whisper_rel")"
+chmod -R a+rX "$root"
+echo "Voice AI models downloaded under: $root"

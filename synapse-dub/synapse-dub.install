@@ -1,23 +1,16 @@
 post_install() {
   cat <<'MSG'
 
-Synapse Dub installed.
+Synapse Dub installed with its complete Python runtime.
 
-1. Initialize only the Python projects missing from CachyOS:
-     synapse-dub-runtime setup
+Model weights are external to the pacman package. When selected in Calamares,
+the Server Setup page records the required non-commercial license acceptance
+and either downloads or validates the models during installation.
 
-2. Review licenses and configuration:
-     /etc/synapse/dub/config.conf
+For a manual installation, review /etc/synapse/dub/config.conf and then run:
 
-3. As the desktop user, download the selected external model weights:
-     synapse-dub-models --backend wav2lip --accept-noncommercial
-
-4. Check the runtime:
-     synapse-dub doctor
-
-No model weight is included in this package. XTTS-v2 and the original Wav2Lip
-weights are non-commercial. Model acceptance and voice enrollment must be done
-in the user session, not from this pacman install hook.
+  sudo synapse-dub-models --backend all --accept-noncommercial
+  synapse-dub doctor
 
 MSG
 }

@@ -1,8 +1,8 @@
 # Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
 
 pkgname=synapse-dub
-pkgver=0.1.0
-pkgrel=3
+pkgver=0.2.0
+pkgrel=1
 pkgdesc='ROCm video dubbing pipeline with explicit multi-speaker voice mapping'
 arch=('x86_64')
 url='https://synapseos.it'
@@ -59,10 +59,9 @@ depends=(
   'python-typing_extensions'
   'python-aiohttp'
   'python-imageio'
-  'uv'
   'rocm-core'
 )
-makedepends=('git')
+makedepends=('git' 'uv')
 optdepends=(
   'pipewire-audio: preview and monitor voice samples'
 )
@@ -73,7 +72,6 @@ source=(
   'wav2lip-modern-python.patch'
   'config.conf'
   'synapse-dub'
-  'synapse-dub-runtime'
   'synapse-dub-models'
   'synapse-dub.install'
   'README.synapse.md'
@@ -81,12 +79,11 @@ source=(
 )
 sha256sums=('4bc8608597f3c31ec23ad7252134425f2b2ce777bf28df2623422f4b2649fe5b'
             '0a31dc9e738fbfa8beaca734b1a39ba24d10067dada63e567096709292600bf8'
-            '448a1f9438931f939098ffdbcf6ce4f30bfc6d4e6fc3d0ca60048074619a2ff6'
-            '85833938f9a850ac8e7cd76bfd04b996305eb8641a13b7d0e953d39ec3be6e54'
-            '5897eea949ca5119dc41c6f7c60437a72edc1c5f6243062219a97bf84c27d9a1'
-            '293ec2ab21db0187115b53468dfc42745476e66a6e18f7f8b97c7492bd9c55ff'
-            '84dac3f7c85ed298ef7fa65558ca72c8f287ca6714324d94f97039a355f6bae6'
-            '7638c18629cb49b75d8d8aa46e9e3726ba97bbda1b7833f923acbcbed5a9c105'
+            '94160d3c0aed6b468df00f5d65bb01410b2eaefb3ef7255e62d45a6d78ffd6b7'
+            '93ec0823629a9b120152e721858344308d8221cf2df398a2e1eda665568b4a4e'
+            'a58814742425829865d168e3a654291efb6bbb8bf1b74c2c3d564a3dce8292b1'
+            '107a8b438aab2bbd18ddaa21cb08e53931f4bf50f41d45fa8b0db688d72d7666'
+            'c3e288a5fd8778d90cfe7dbbb4f4c4a1b875dac1e29de0d587ad3d18070635ae'
             '2f88d98ebf91cf12c7eb63cedd848800b3c05b5dc64d77f093f8063cdb71de09')
 
 prepare() {
@@ -95,11 +92,36 @@ prepare() {
   find "$srcdir/wav2lip" -type d -name '__pycache__' -prune -exec rm -rf {} +
 }
 
+build() {
+  local vendor="$srcdir/python-vendor"
+  rm -rf "$vendor"
+  mkdir -p "$vendor"
+
+  UV_LINK_MODE=copy uv pip install --python /usr/bin/python --target "$vendor" --no-deps \
+    'coqui-tts==0.27.5' 'coqpit-config==0.2.2' 'coqui-tts-trainer==0.3.0' \
+    'monotonic-alignment-search==0.2.1' 'num2words==0.5.14' 'pysbd==0.3.4' \
+    'gruut-ipa==0.13.0' 'gruut-lang-en==2.0.1' 'gruut==2.4.0' \
+    'encodec==0.1.1' 'bangla==0.0.5' 'bnnumerizer==0.0.2' \
+    'bnunicodenormalizer==0.1.7' 'hangul-romanize==0.1.0' \
+    'ko-speech-tools==0.1.0' 'jamo==0.4.1' 'pyannote-audio==4.0.7' \
+    'asteroid-filterbanks==0.4.0' 'lightning-utilities==0.15.2' 'lightning==2.6.0' \
+    'torchmetrics==1.8.2' 'pyannote-core==6.0.1' 'pyannote-database==6.1.1' \
+    'pyannote-metrics==4.0.0' 'pyannote-pipeline==4.0.0' 'optuna==4.9.0' \
+    'pyannoteai-sdk==0.3.0' 'pytorch-metric-learning==2.9.0' 'einops==0.8.2' \
+    'torch-audiomentations==0.12.0' 'julius==0.2.8' \
+    'torch-pitch-shift==1.2.5' 'primePy==1.3'
+
+  sed -i 's/from transformers.pytorch_utils import isin_mps_friendly as isin/from torch import isin/' \
+    "$vendor/TTS/tts/layers/tortoise/autoregressive.py"
+  rm -rf "$vendor/bin" "$vendor/.lock"
+}
+
 package() {
   local appdir="$pkgdir/usr/lib/synapse-dub"
   local backenddir="$pkgdir/opt/synapse-dub/backends"
 
-  install -dm755 "$appdir/synapse_dub" "$backenddir"
+  install -dm755 "$appdir/synapse_dub" "$appdir/python" "$backenddir"
+  cp -a "$srcdir/python-vendor/." "$appdir/python/"
   install -Dm644 "$startdir/synapse_dub/__init__.py" "$appdir/synapse_dub/__init__.py"
   install -Dm644 "$startdir/synapse_dub/cli.py" "$appdir/synapse_dub/cli.py"
   install -Dm644 "$startdir/sitecustomize.py" "$appdir/sitecustomize.py"
@@ -109,9 +131,9 @@ package() {
   find "$backenddir" -type d -name '__pycache__' -prune -exec rm -rf {} +
 
   install -Dm755 "$srcdir/synapse-dub" "$pkgdir/usr/bin/synapse-dub"
-  install -Dm755 "$srcdir/synapse-dub-runtime" "$pkgdir/usr/bin/synapse-dub-runtime"
   install -Dm755 "$srcdir/synapse-dub-models" "$pkgdir/usr/bin/synapse-dub-models"
   install -Dm644 "$srcdir/config.conf" "$pkgdir/etc/synapse/dub/config.conf"
+  install -dm755 "$pkgdir/var/lib/synapse/dub/models"
 
   install -Dm644 "$srcdir/README.synapse.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

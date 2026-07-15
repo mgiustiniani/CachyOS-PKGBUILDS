@@ -2,7 +2,7 @@
 
 pkgname=synapse-voice-ai-rocm
 pkgver=0.1.0
-pkgrel=4
+pkgrel=5
 pkgdesc='Local multilingual voice cloning, TTS, and Whisper ASR for Synapse Linux ROCm systems'
 arch=('x86_64')
 url='https://github.com/resemble-ai/chatterbox'
@@ -42,6 +42,7 @@ source=(
   'synapse-voice-transcribe'
   'synapse-voice-enroll'
   'synapse-voice-import-models'
+  'synapse-voice-download-models'
   'synapse-voice-api.service'
   'synapse-voice-ai-rocm.install'
   'README.synapse.md'
@@ -53,9 +54,10 @@ sha256sums=('156074498cda793532394e9df902ebac974449dcadd5d506a364a5c8d5cb1866'
             '4c6e01aee8ca429a25c674edad7ae56e06ea49d77d4074664a0fe2f9c94f0c05'
             'a1c8c3a3b936c9b86031e39f4c38ef2f47a808519538683c91cd7f34ba233cca'
             'e8f65e57538e420aef3dca925cd859313f55cd5770eca99cac7804d18ea4736a'
+            '7968f6fdc471c7f529da37a6f95791c684442a1c4db8f550ac77876abeaa7092'
             '8f8f58cb638de9efe2414e96918341aad8e3b2fce890a572d4976267a4cd449e'
-            '406e6c98ec383d829612193af22449adfde238351ba092a4705ae6ce0771503c'
-            '02789bd6d00fe032051ab836c64b1cb23c23aa0c411f5efe2a1fcf4968d6cc1f')
+            'bed415264566295a61773f99c9c15cd3a97e7630323056cba4dcb21cc7527b3e'
+            'ca6119fb821fbe5c79a2ad88c90d3442d021c39993eb34b464dc9ea42d4e39b0')
 
 build() {
   local vendor="$srcdir/python-vendor"
@@ -101,6 +103,7 @@ package() {
   install -Dm755 "$srcdir/synapse-voice-transcribe" "$pkgdir/usr/bin/synapse-voice-transcribe"
   install -Dm755 "$srcdir/synapse-voice-enroll" "$pkgdir/usr/bin/synapse-voice-enroll"
   install -Dm755 "$srcdir/synapse-voice-import-models" "$pkgdir/usr/bin/synapse-voice-import-models"
+  install -Dm755 "$srcdir/synapse-voice-download-models" "$pkgdir/usr/bin/synapse-voice-download-models"
   install -Dm644 "$srcdir/synapse-voice-api.service" "$pkgdir/usr/lib/systemd/user/synapse-voice-api.service"
 
   install -dm755 "$pkgdir/var/lib/synapse/voice-ai/models"

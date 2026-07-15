@@ -17,7 +17,14 @@ format-first categories:
 - `safetensors/voice-ai/huggingface/ResembleAI/chatterbox`
 - `ggml/speech-recognition/whisper.cpp/ggml-large-v3-turbo-q8_0.bin`
 
-Mount the filesystem labelled `models`, then validate it:
+Calamares Server Setup can either validate an external model archive or download
+the pinned model revisions from the Internet. For a manual Internet download:
+
+```sh
+sudo synapse-voice-download-models --root /var/lib/synapse/voice-ai/models
+```
+
+Alternatively, mount the filesystem labelled `models`, then validate it:
 
 ```sh
 synapse-voice-import-models
