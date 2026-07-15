@@ -798,7 +798,7 @@ def build_parser() -> argparse.ArgumentParser:
     youtube_parser.add_argument("--target-language", required=True)
     youtube_parser.add_argument("--translation-endpoint")
     youtube_parser.add_argument("--translation-model")
-    youtube_parser.add_argument("--backend", choices=("wav2lip", "none"), default="wav2lip")
+    youtube_parser.add_argument("--backend", choices=("none", "wav2lip"), default="none")
     youtube_parser.add_argument("--output", type=Path, required=True)
     youtube_parser.set_defaults(handler=command_youtube, custom_prompt=None)
 

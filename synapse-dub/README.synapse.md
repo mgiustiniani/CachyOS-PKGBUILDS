@@ -107,7 +107,9 @@ in `generative-visual.generation.json`.
 ## Translate an authorized YouTube video
 
 The repository `yt-dlp` package downloads one video; playlists are disabled.
-Only download content you own or are authorized to process.
+Only download content you own or are authorized to process. YouTube translation
+preserves the original video stream by default and replaces only its audio.
+Pass `--backend wav2lip` explicitly when mouth-region modification is desired.
 
 ```sh
 synapse-dub youtube 'https://www.youtube.com/watch?v=VIDEO_ID' \
