@@ -1,0 +1,618 @@
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.request
+import wave
+from array import array
+from pathlib import Path
+from typing import Any
+
+CONFIG_PATH = Path("/etc/synapse/dub/config.conf")
+BACKEND_ROOT = Path("/opt/synapse-dub/backends")
+
+
+def load_config(path: Path = CONFIG_PATH) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if path.exists():
+        for raw in path.read_text().splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip().strip("\"'")
+    for key in tuple(values):
+        values[key] = os.environ.get(key, values[key])
+        if key.endswith(("_PATH", "_ROOT", "_CHECKPOINT", "_UNET", "_CONFIG", "_S3FD")):
+            values[key] = str(Path(os.path.expandvars(values[key])).expanduser())
+    return values
+
+
+def run(command: list[str], *, cwd: Path | None = None, capture: bool = False) -> subprocess.CompletedProcess[str]:
+    print("+", " ".join(shlex_quote(item) for item in command), file=sys.stderr)
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        check=True,
+        text=True,
+        capture_output=capture,
+    )
+
+
+def shlex_quote(value: str) -> str:
+    import shlex
+
+    return shlex.quote(str(value))
+
+
+def require_command(name: str) -> None:
+    if not shutil.which(name):
+        raise RuntimeError(f"Required command not found: {name}")
+
+
+def write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+
+
+def read_json(path: Path) -> Any:
+    return json.loads(path.read_text())
+
+
+def normalize_script(data: Any) -> dict[str, Any]:
+    if isinstance(data, list):
+        data = {"segments": data}
+    if not isinstance(data, dict) or not isinstance(data.get("segments"), list):
+        raise ValueError("Dialogue script must contain a segments array")
+    segments: list[dict[str, Any]] = []
+    for index, item in enumerate(data["segments"]):
+        if not isinstance(item, dict):
+            raise ValueError(f"Segment {index} is not an object")
+        start = float(item.get("start", 0.0))
+        end = float(item.get("end", start))
+        if end <= start:
+            raise ValueError(f"Segment {index} has invalid timing")
+        text = str(item.get("text", "")).strip()
+        if not text:
+            continue
+        segments.append(
+            {
+                "id": item.get("id", index),
+                "start": start,
+                "end": end,
+                "speaker": str(item.get("speaker", "SPEAKER_00")),
+                "text": text,
+            }
+        )
+    if not segments:
+        raise ValueError("Dialogue script contains no usable segments")
+    return {"language": data.get("language"), "segments": segments}
+
+
+def extract_audio(video: Path, output: Path) -> None:
+    require_command("ffmpeg")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(video),
+            "-vn",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-c:a",
+            "pcm_s16le",
+            str(output),
+        ]
+    )
+
+
+def transcribe(audio: Path, output: Path, model_name: str, language: str | None) -> dict[str, Any]:
+    try:
+        import whisper
+    except ImportError as exc:
+        raise RuntimeError("python-openai-whisper is required") from exc
+    print(f"Loading Whisper model {model_name}...", file=sys.stderr)
+    model = whisper.load_model(model_name)
+    result = model.transcribe(str(audio), language=language, word_timestamps=True)
+    data = {
+        "language": result.get("language", language),
+        "segments": [
+            {
+                "id": segment.get("id", index),
+                "start": float(segment["start"]),
+                "end": float(segment["end"]),
+                "speaker": "SPEAKER_00",
+                "text": segment["text"].strip(),
+            }
+            for index, segment in enumerate(result.get("segments", []))
+            if segment.get("text", "").strip()
+        ],
+    }
+    data = normalize_script(data)
+    write_json(output, data)
+    return data
+
+
+def diarize(audio: Path, script: dict[str, Any], token: str | None, model: str) -> dict[str, Any]:
+    try:
+        import torch
+        from pyannote.audio import Pipeline
+    except ImportError as exc:
+        raise RuntimeError(
+            "pyannote.audio is not available. Run synapse-dub-runtime setup or provide a speaker-labelled script."
+        ) from exc
+    if not token:
+        raise RuntimeError("HUGGINGFACE_TOKEN is required for pyannote diarization")
+    pipeline = Pipeline.from_pretrained(model, token=token)
+    if torch.cuda.is_available():
+        pipeline.to(torch.device("cuda"))
+    result = pipeline(str(audio))
+    annotation = getattr(result, "speaker_diarization", result)
+    turns: list[tuple[float, float, str]] = []
+    for turn, _, speaker in annotation.itertracks(yield_label=True):
+        turns.append((float(turn.start), float(turn.end), str(speaker)))
+    for segment in script["segments"]:
+        best_speaker = "SPEAKER_00"
+        best_overlap = 0.0
+        for start, end, speaker in turns:
+            overlap = max(0.0, min(segment["end"], end) - max(segment["start"], start))
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_speaker = speaker
+        segment["speaker"] = best_speaker
+    return script
+
+
+def speaker_ids(script: dict[str, Any]) -> list[str]:
+    return sorted({str(segment["speaker"]) for segment in script["segments"]})
+
+
+def extract_candidate_samples(
+    audio: Path, script: dict[str, Any], directory: Path, seconds_per_speaker: float
+) -> list[Path]:
+    directory.mkdir(parents=True, exist_ok=True)
+    outputs: list[Path] = []
+    for speaker in speaker_ids(script):
+        segments = [
+            segment
+            for segment in script["segments"]
+            if segment["speaker"] == speaker and segment["end"] - segment["start"] >= 1.0
+        ]
+        segments.sort(key=lambda item: item["end"] - item["start"], reverse=True)
+        selected: list[dict[str, Any]] = []
+        duration = 0.0
+        for segment in segments:
+            if duration >= seconds_per_speaker:
+                break
+            selected.append(segment)
+            duration += segment["end"] - segment["start"]
+        if not selected:
+            continue
+        filters: list[str] = []
+        labels: list[str] = []
+        for index, segment in enumerate(selected):
+            filters.append(
+                f"[0:a]atrim=start={segment['start']:.3f}:end={segment['end']:.3f},asetpts=PTS-STARTPTS[a{index}]"
+            )
+            labels.append(f"[a{index}]")
+        filters.append(f"{''.join(labels)}concat=n={len(labels)}:v=0:a=1[out]")
+        output = directory / f"candidate-{speaker}.wav"
+        run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(audio),
+                "-filter_complex",
+                ";".join(filters),
+                "-map",
+                "[out]",
+                "-t",
+                str(seconds_per_speaker),
+                "-ar",
+                "24000",
+                "-ac",
+                "1",
+                str(output),
+            ]
+        )
+        outputs.append(output)
+    return outputs
+
+
+def collect_samples(paths: list[Path]) -> list[Path]:
+    samples: list[Path] = []
+    for path in paths:
+        if path.is_dir():
+            samples.extend(sorted(item for item in path.iterdir() if item.suffix.lower() in {".wav", ".flac", ".mp3", ".m4a", ".ogg"}))
+        elif path.is_file():
+            samples.append(path)
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for sample in samples:
+        resolved = sample.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(resolved)
+    return unique
+
+
+def preview_sample(path: Path) -> None:
+    player = shutil.which("ffplay")
+    if not player:
+        print("ffplay is not installed; preview unavailable.", file=sys.stderr)
+        return
+    subprocess.run(
+        [player, "-nodisp", "-autoexit", "-loglevel", "error", str(path)],
+        check=False,
+    )
+
+
+def map_speakers_interactively(
+    script: dict[str, Any], samples: list[Path], output: Path
+) -> dict[str, str]:
+    if not sys.stdin.isatty():
+        raise RuntimeError("Interactive speaker mapping requires a terminal; use --speaker-map FILE")
+    if not samples:
+        raise RuntimeError("No voice samples are available")
+    speakers = speaker_ids(script)
+    print("\nDetected dialogue speakers:")
+    for speaker in speakers:
+        examples = [segment["text"] for segment in script["segments"] if segment["speaker"] == speaker][:3]
+        print(f"  {speaker}: {' | '.join(examples)}")
+    print("\nAvailable voice samples:")
+    for index, sample in enumerate(samples, 1):
+        print(f"  {index}) {sample}")
+    print("Enter a sample number, or 'p N' to preview sample N. Samples may be reused.")
+    mapping: dict[str, str] = {}
+    for speaker in speakers:
+        while True:
+            answer = input(f"Sample for {speaker}: ").strip()
+            if answer.lower().startswith("p "):
+                try:
+                    preview_sample(samples[int(answer.split()[1]) - 1])
+                except (ValueError, IndexError):
+                    print("Invalid preview selection.")
+                continue
+            try:
+                selected = samples[int(answer) - 1]
+            except (ValueError, IndexError):
+                print(f"Choose a number from 1 to {len(samples)}.")
+                continue
+            mapping[speaker] = str(selected)
+            break
+    print("\nSpeaker mapping:")
+    for speaker, sample in mapping.items():
+        print(f"  {speaker} -> {sample}")
+    confirmation = input("Confirm this mapping? [y/N]: ").strip().lower()
+    if confirmation not in {"y", "yes"}:
+        raise RuntimeError("Speaker mapping was not confirmed")
+    write_json(output, mapping)
+    return mapping
+
+
+def translate_script(
+    script: dict[str, Any], target_language: str, endpoint: str, model: str, api_key: str | None
+) -> dict[str, Any]:
+    texts = [segment["text"] for segment in script["segments"]]
+    prompt = (
+        f"Translate each JSON string to {target_language}. Return only a JSON array with exactly "
+        f"{len(texts)} strings in the same order. Preserve names and meaning. Input: "
+        + json.dumps(texts, ensure_ascii=False)
+    )
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are a precise audiovisual dialogue translator."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0,
+        }
+    ).encode()
+    request = urllib.request.Request(
+        endpoint.rstrip("/") + "/chat/completions",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            **({"Authorization": f"Bearer {api_key}"} if api_key else {}),
+        },
+    )
+    with urllib.request.urlopen(request, timeout=300) as response:
+        body = json.load(response)
+    content = body["choices"][0]["message"]["content"].strip()
+    if content.startswith("```"):
+        content = content.split("\n", 1)[1].rsplit("```", 1)[0]
+    translated = json.loads(content)
+    if not isinstance(translated, list) or len(translated) != len(texts):
+        raise RuntimeError("Translation endpoint returned an invalid segment list")
+    output = json.loads(json.dumps(script))
+    output["language"] = target_language
+    for segment, text in zip(output["segments"], translated, strict=True):
+        segment["text"] = str(text).strip()
+    return output
+
+
+def xtts_synthesize(
+    script: dict[str, Any], mapping: dict[str, str], directory: Path, language: str
+) -> list[tuple[dict[str, Any], Path]]:
+    config = load_config()
+    accepted = config.get("ACCEPT_NONCOMMERCIAL_MODEL_LICENSES", "no").lower() in {"yes", "true", "1"}
+    if not accepted:
+        raise RuntimeError(
+            "XTTS-v2 uses the non-commercial Coqui Public Model License. Set "
+            "ACCEPT_NONCOMMERCIAL_MODEL_LICENSES=yes after reviewing the license."
+        )
+    try:
+        import torch
+        from TTS.api import TTS
+    except ImportError as exc:
+        raise RuntimeError("Coqui TTS runtime is unavailable; run synapse-dub-runtime setup") from exc
+    directory.mkdir(parents=True, exist_ok=True)
+    tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
+    if torch.cuda.is_available():
+        tts = tts.to("cuda")
+    generated: list[tuple[dict[str, Any], Path]] = []
+    for index, segment in enumerate(script["segments"]):
+        speaker = segment["speaker"]
+        if speaker not in mapping:
+            raise RuntimeError(f"No confirmed voice sample for {speaker}")
+        output = directory / f"segment-{index:05d}.wav"
+        tts.tts_to_file(
+            text=segment["text"],
+            speaker_wav=mapping[speaker],
+            language=language,
+            file_path=str(output),
+        )
+        generated.append((segment, output))
+    return generated
+
+
+def normalize_clip(source: Path, destination: Path, sample_rate: int = 24000) -> None:
+    run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(source),
+            "-ar",
+            str(sample_rate),
+            "-ac",
+            "1",
+            "-c:a",
+            "pcm_s16le",
+            str(destination),
+        ]
+    )
+
+
+def assemble_timeline(generated: list[tuple[dict[str, Any], Path]], output: Path) -> None:
+    sample_rate = 24000
+    normalized_dir = output.parent / "normalized"
+    normalized_dir.mkdir(parents=True, exist_ok=True)
+    clips: list[tuple[int, array]] = []
+    final_samples = 0
+    for index, (segment, source) in enumerate(generated):
+        normalized = normalized_dir / f"{index:05d}.wav"
+        normalize_clip(source, normalized, sample_rate)
+        with wave.open(str(normalized), "rb") as stream:
+            if stream.getsampwidth() != 2 or stream.getnchannels() != 1:
+                raise RuntimeError(f"Unexpected normalized WAV format: {normalized}")
+            values = array("h")
+            values.frombytes(stream.readframes(stream.getnframes()))
+        offset = int(float(segment["start"]) * sample_rate)
+        clips.append((offset, values))
+        final_samples = max(final_samples, offset + len(values))
+    mix = array("h", [0]) * final_samples
+    for offset, values in clips:
+        for index, value in enumerate(values):
+            position = offset + index
+            mixed = mix[position] + value
+            mix[position] = max(-32768, min(32767, mixed))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(output), "wb") as stream:
+        stream.setnchannels(1)
+        stream.setsampwidth(2)
+        stream.setframerate(sample_rate)
+        stream.writeframes(mix.tobytes())
+
+
+def lipsync(backend: str, video: Path, audio: Path, output: Path, config: dict[str, str]) -> None:
+    python = sys.executable
+    if backend != "wav2lip":
+        raise ValueError(f"Unsupported lip-sync backend in this release: {backend}")
+    root = BACKEND_ROOT / "wav2lip"
+    checkpoint = Path(config["WAV2LIP_CHECKPOINT"])
+    os.environ["WAV2LIP_S3FD"] = config["WAV2LIP_S3FD"]
+    (output.parent / "temp").mkdir(parents=True, exist_ok=True)
+    run(
+        [python, str(root / "inference.py"), "--checkpoint_path", str(checkpoint),
+         "--face", str(video), "--audio", str(audio), "--outfile", str(output)],
+        cwd=output.parent,
+    )
+
+
+def mux(video: Path, audio: Path, output: Path) -> None:
+    run(
+        [
+            "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
+            "-i", str(video), "-i", str(audio), "-map", "0:v:0", "-map", "1:a:0",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", str(output),
+        ]
+    )
+
+
+def doctor() -> int:
+    config = load_config()
+    checks: list[tuple[str, bool, str]] = []
+    for command in ("ffmpeg", "ffprobe", "python"):
+        checks.append((command, shutil.which(command) is not None, shutil.which(command) or "not found"))
+    imports = {
+        "whisper": "python-openai-whisper",
+        "torch": "python-pytorch-opt-rocm",
+        "cv2": "python-opencv",
+        "TTS": "Coqui TTS runtime (synapse-dub-runtime setup)",
+        "pyannote.audio": "pyannote.audio runtime (synapse-dub-runtime setup)",
+    }
+    for module, package in imports.items():
+        result = subprocess.run([sys.executable, "-c", f"import {module}"], capture_output=True)
+        checks.append((module, result.returncode == 0, package))
+    for backend in ("wav2lip",):
+        root = BACKEND_ROOT / backend
+        checks.append((backend, root.is_dir(), str(root)))
+    model_paths = {
+        "wav2lip model": config.get("WAV2LIP_CHECKPOINT", ""),
+        "wav2lip face model": config.get("WAV2LIP_S3FD", ""),
+    }
+    for name, path in model_paths.items():
+        checks.append((name, bool(path) and Path(path).exists(), path or "not configured"))
+    failed = False
+    for name, ok, detail in checks:
+        print(f"{'PASS' if ok else 'FAIL':4}  {name:22} {detail}")
+        failed |= not ok
+    return 1 if failed else 0
+
+
+def prepare(args: argparse.Namespace) -> tuple[Path, dict[str, Any], dict[str, str]]:
+    workspace = args.workspace.resolve()
+    workspace.mkdir(parents=True, exist_ok=True)
+    audio = workspace / "source-16k.wav"
+    if not audio.exists() or args.force:
+        extract_audio(args.video.resolve(), audio)
+    script_path = workspace / "dialogue.json"
+    if args.script:
+        script = normalize_script(read_json(args.script))
+        write_json(script_path, script)
+    elif script_path.exists() and not args.force:
+        script = normalize_script(read_json(script_path))
+    else:
+        script = transcribe(audio, script_path, args.whisper_model, args.source_language)
+    if args.diarize:
+        script = diarize(
+            audio,
+            script,
+            os.environ.get("HUGGINGFACE_TOKEN") or load_config().get("HUGGINGFACE_TOKEN"),
+            args.diarization_model,
+        )
+        write_json(script_path, script)
+    candidate_dir = workspace / "samples" / "detected"
+    detected = extract_candidate_samples(audio, script, candidate_dir, args.sample_seconds)
+    provided = collect_samples([Path(item) for item in args.samples])
+    all_samples = collect_samples([*provided, *detected])
+    map_path = workspace / "speaker-map.json"
+    if args.speaker_map:
+        mapping = {str(key): str(Path(value).resolve()) for key, value in read_json(args.speaker_map).items()}
+        write_json(map_path, mapping)
+    elif map_path.exists() and not args.remap:
+        mapping = read_json(map_path)
+    else:
+        mapping = map_speakers_interactively(script, all_samples, map_path)
+    mapping = {str(key): str(Path(value).expanduser().resolve()) for key, value in mapping.items()}
+    missing = sorted(set(speaker_ids(script)) - set(mapping))
+    if missing:
+        raise RuntimeError(f"Speaker map is incomplete; missing: {', '.join(missing)}")
+    missing_files = sorted(path for path in mapping.values() if not Path(path).is_file())
+    if missing_files:
+        raise RuntimeError("Speaker map references missing samples: " + ", ".join(missing_files))
+    write_json(map_path, mapping)
+    return workspace, script, mapping
+
+
+def command_prepare(args: argparse.Namespace) -> int:
+    workspace, script, mapping = prepare(args)
+    print(f"Workspace: {workspace}")
+    print(f"Segments: {len(script['segments'])}; speakers: {len(speaker_ids(script))}")
+    print(f"Confirmed mappings: {len(mapping)}")
+    return 0
+
+
+def command_run(args: argparse.Namespace) -> int:
+    workspace, script, mapping = prepare(args)
+    config = load_config()
+    if args.target_language:
+        script = translate_script(
+            script,
+            args.target_language,
+            args.translation_endpoint or config.get("TRANSLATION_ENDPOINT", "http://127.0.0.1:8000/v1"),
+            args.translation_model or config.get("TRANSLATION_MODEL", "deepseek-v4-flash"),
+            os.environ.get("OPENAI_API_KEY"),
+        )
+        write_json(workspace / "dialogue-translated.json", script)
+    language = args.target_language or script.get("language") or args.source_language
+    if not language:
+        raise RuntimeError("XTTS language is unknown; set --target-language or --source-language")
+    generated = xtts_synthesize(script, mapping, workspace / "tts-segments", language)
+    dubbed_audio = workspace / "dubbed.wav"
+    assemble_timeline(generated, dubbed_audio)
+    synced_video = workspace / f"lipsync-{args.backend}.mp4"
+    lipsync(args.backend, args.video.resolve(), dubbed_audio, synced_video, config)
+    mux(synced_video, dubbed_audio, args.output.resolve())
+    print(args.output.resolve())
+    return 0
+
+
+def add_prepare_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("video", type=Path)
+    parser.add_argument("--workspace", type=Path, default=Path("synapse-dub-work"))
+    parser.add_argument("--script", type=Path, help="Pre-labelled dialogue JSON")
+    parser.add_argument("--samples", action="append", default=[], help="Sample file or directory; repeatable")
+    parser.add_argument("--speaker-map", type=Path, help="Pre-confirmed speaker-to-sample JSON for non-interactive runs")
+    parser.add_argument("--source-language")
+    parser.add_argument("--whisper-model", default="large-v3-turbo")
+    parser.add_argument("--diarize", action="store_true")
+    parser.add_argument("--diarization-model", default="pyannote/speaker-diarization-community-1")
+    parser.add_argument("--sample-seconds", type=float, default=12.0)
+    parser.add_argument("--remap", action="store_true")
+    parser.add_argument("--force", action="store_true")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="synapse-dub", description="ROCm video dubbing pipeline")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    doctor_parser = subparsers.add_parser("doctor", help="Check runtime and model availability")
+    doctor_parser.set_defaults(handler=lambda args: doctor())
+    prepare_parser = subparsers.add_parser("prepare", help="Transcribe, diarize, extract samples, and map speakers")
+    add_prepare_arguments(prepare_parser)
+    prepare_parser.set_defaults(handler=command_prepare)
+    run_parser = subparsers.add_parser("run", help="Run the complete dubbing pipeline")
+    add_prepare_arguments(run_parser)
+    run_parser.add_argument("--target-language", help="Enable optional translation and set XTTS output language")
+    run_parser.add_argument("--translation-endpoint")
+    run_parser.add_argument("--translation-model")
+    run_parser.add_argument("--backend", choices=("wav2lip",), default="wav2lip")
+    run_parser.add_argument("--output", type=Path, required=True)
+    run_parser.set_defaults(handler=command_run)
+    return parser
+
+
+def main() -> int:
+    try:
+        parser = build_parser()
+        args = parser.parse_args()
+        return int(args.handler(args))
+    except (RuntimeError, ValueError, subprocess.CalledProcessError, OSError) as exc:
+        print(f"synapse-dub: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

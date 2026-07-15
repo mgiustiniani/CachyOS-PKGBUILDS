@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=${XDG_DATA_HOME:-$HOME/.local/share}/synapse-dub/models
+backend=all
+accept_noncommercial=false
+
+while (($#)); do
+  case "$1" in
+    --root) root=$2; shift 2 ;;
+    --backend) backend=$2; shift 2 ;;
+    --accept-noncommercial) accept_noncommercial=true; shift ;;
+    -h|--help)
+      echo "Usage: synapse-dub-models [--root DIR] [--backend all|wav2lip] [--accept-noncommercial]"
+      exit 0 ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+
+mkdir -p "$root"
+if [[ "$backend" == all || "$backend" == wav2lip ]]; then
+  if ! $accept_noncommercial; then
+    echo "Wav2Lip pretrained models are non-commercial. Re-run with --accept-noncommercial after reviewing the upstream license." >&2
+  else
+    mkdir -p "$root/wav2lip"
+    revision=bfcd9263d1ccb60ab724f074e7c1b3555f6cb162
+    curl -fL --retry 3 \
+      "https://huggingface.co/camenduru/Wav2Lip/resolve/$revision/checkpoints/wav2lip_gan.pth" \
+      -o "$root/wav2lip/wav2lip_gan.pth"
+    curl -fL --retry 3 https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth \
+      -o "$root/wav2lip/s3fd.pth"
+    (cd "$root/wav2lip" && sha256sum -c - <<'SUMS'
+ca9ab7b7b812c0e80a6e70a5977c545a1e8a365a6c49d5e533023c034d7ac3d8  wav2lip_gan.pth
+619a31681264d3f7f7fc7a16a42cbbe8b23f31a256f75a366e5a1bcd59b33543  s3fd.pth
+SUMS
+    )
+  fi
+fi
+
+cat <<EOF
+Models downloaded under: $root
+
+XTTS-v2 is downloaded by Coqui on first accepted user run and is governed by
+the non-commercial Coqui Public Model License. Set TTS_HOME or use the default
+user model directory created by /usr/bin/synapse-dub.
+EOF

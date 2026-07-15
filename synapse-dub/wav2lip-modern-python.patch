@@ -1,0 +1,69 @@
+--- a/audio.py
++++ b/audio.py
+@@ -97,8 +97,8 @@
+ 
+ def _build_mel_basis():
+     assert hp.fmax <= hp.sample_rate // 2
+-    return librosa.filters.mel(hp.sample_rate, hp.n_fft, n_mels=hp.num_mels,
+-                               fmin=hp.fmin, fmax=hp.fmax)
++    return librosa.filters.mel(sr=hp.sample_rate, n_fft=hp.n_fft,
++                               n_mels=hp.num_mels, fmin=hp.fmin, fmax=hp.fmax)
+ 
+ def _amp_to_db(x):
+     min_level = np.exp(hp.min_level_db / 20 * np.log(10))
+--- a/inference.py
++++ b/inference.py
+@@ -159,10 +159,10 @@
+ 
+ def _load(checkpoint_path):
+ 	if device == 'cuda':
+-		checkpoint = torch.load(checkpoint_path)
++		checkpoint = torch.load(checkpoint_path, weights_only=False)
+ 	else:
+ 		checkpoint = torch.load(checkpoint_path,
+-								map_location=lambda storage, loc: storage)
++								map_location=lambda storage, loc: storage, weights_only=False)
+ 	return checkpoint
+ 
+ def load_model(path):
+@@ -253,8 +253,10 @@
+ 			print ("Model loaded")
+ 
+ 			frame_h, frame_w = full_frames[0].shape[:-1]
+-			out = cv2.VideoWriter('temp/result.avi', 
+-									cv2.VideoWriter_fourcc(*'DIVX'), fps, (frame_w, frame_h))
++			out = cv2.VideoWriter('temp/result.avi', cv2.CAP_FFMPEG,
++									cv2.VideoWriter_fourcc(*'MJPG'), fps, (frame_w, frame_h))
++			if not out.isOpened():
++				raise RuntimeError('OpenCV FFmpeg VideoWriter could not create temp/result.avi')
+ 
+ 		img_batch = torch.FloatTensor(np.transpose(img_batch, (0, 3, 1, 2))).to(device)
+ 		mel_batch = torch.FloatTensor(np.transpose(mel_batch, (0, 3, 1, 2))).to(device)
+@@ -274,7 +276,7 @@
+ 	out.release()
+ 
+ 	command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(args.audio, 'temp/result.avi', args.outfile)
+-	subprocess.call(command, shell=platform.system() != 'Windows')
++	subprocess.check_call(command, shell=platform.system() != 'Windows')
+ 
+ if __name__ == '__main__':
+ 	main()
+--- a/face_detection/detection/sfd/sfd_detector.py
++++ b/face_detection/detection/sfd/sfd_detector.py
+@@ -14,14 +14,14 @@
+ 
+ 
+ class SFDDetector(FaceDetector):
+-    def __init__(self, device, path_to_detector=os.path.join(os.path.dirname(os.path.abspath(__file__)), 's3fd.pth'), verbose=False):
++    def __init__(self, device, path_to_detector=os.environ.get('WAV2LIP_S3FD', os.path.join(os.path.dirname(os.path.abspath(__file__)), 's3fd.pth')), verbose=False):
+         super(SFDDetector, self).__init__(device, verbose)
+ 
+         # Initialise the face detector
+         if not os.path.isfile(path_to_detector):
+             model_weights = load_url(models_urls['s3fd'])
+         else:
+-            model_weights = torch.load(path_to_detector)
++            model_weights = torch.load(path_to_detector, weights_only=False)
+ 
+         self.face_detector = s3fd()
+         self.face_detector.load_state_dict(model_weights)

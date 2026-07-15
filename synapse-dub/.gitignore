@@ -1,0 +1,7 @@
+*.pkg.tar.*
+src/
+pkg/
+wav2lip/
+musetalk/
+latentsync/
+__pycache__/

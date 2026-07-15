@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+runtime_home=${XDG_DATA_HOME:-$HOME/.local/share}/synapse-dub
+python=/usr/bin/python
+if [[ -x "$runtime_home/venv/bin/python" ]]; then
+    python="$runtime_home/venv/bin/python"
+fi
+export PYTHONPATH="/usr/lib/synapse-dub${PYTHONPATH:+:$PYTHONPATH}"
+export TTS_HOME="${TTS_HOME:-$runtime_home/models/coqui}"
+exec "$python" -m synapse_dub.cli "$@"
