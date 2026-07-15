@@ -82,6 +82,26 @@ For unattended operation, prepare and manually review a map first, then pass it
 with `--speaker-map FILE`. A non-interactive invocation without a confirmed map
 is rejected.
 
+## Translate an authorized YouTube video
+
+The repository `yt-dlp` package downloads one video; playlists are disabled.
+Only download content you own or are authorized to process.
+
+```sh
+synapse-dub youtube 'https://www.youtube.com/watch?v=VIDEO_ID' \
+  --workspace youtube-it-work \
+  --diarize \
+  --target-language it \
+  --output youtube-it.mp4
+```
+
+For an owned video requiring authentication, pass `--cookies FILE` or
+`--cookies-from-browser BROWSER`. The downloaded source and yt-dlp metadata stay
+inside the selected workspace for reproducibility.
+
+The complete implemented and planned workflow inventory is installed at
+`/usr/share/doc/synapse-dub/WORKFLOWS.md`.
+
 ## Runtime policy
 
 The pacman package does not include FFmpeg, Python, PyTorch, ROCm, OpenCV,

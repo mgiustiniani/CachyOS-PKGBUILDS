@@ -1,6 +1,6 @@
 pkgbase = synapse-dub
 	pkgdesc = ROCm video dubbing pipeline with explicit multi-speaker voice mapping
-	pkgver = 0.2.0
+	pkgver = 0.3.0
 	pkgrel = 1
 	url = https://synapseos.it
 	install = synapse-dub.install
@@ -14,6 +14,7 @@ pkgbase = synapse-dub
 	depends = coreutils
 	depends = curl
 	depends = ffmpeg
+	depends = yt-dlp
 	depends = python
 	depends = python-openai-whisper
 	depends = python-pytorch-opt-rocm
@@ -75,7 +76,7 @@ pkgbase = synapse-dub
 	sha256sums = 93ec0823629a9b120152e721858344308d8221cf2df398a2e1eda665568b4a4e
 	sha256sums = a58814742425829865d168e3a654291efb6bbb8bf1b74c2c3d564a3dce8292b1
 	sha256sums = 107a8b438aab2bbd18ddaa21cb08e53931f4bf50f41d45fa8b0db688d72d7666
-	sha256sums = c3e288a5fd8778d90cfe7dbbb4f4c4a1b875dac1e29de0d587ad3d18070635ae
+	sha256sums = 90a68e111ecaf034e0075c127f9b83e8af524430491a18ee78b949a1445adeca
 	sha256sums = 2f88d98ebf91cf12c7eb63cedd848800b3c05b5dc64d77f093f8063cdb71de09
 
 pkgname = synapse-dub

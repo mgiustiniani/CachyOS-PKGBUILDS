@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 import urllib.request
 import wave
 from array import array
@@ -36,13 +37,18 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, str]:
 
 def run(command: list[str], *, cwd: Path | None = None, capture: bool = False) -> subprocess.CompletedProcess[str]:
     print("+", " ".join(shlex_quote(item) for item in command), file=sys.stderr)
-    return subprocess.run(
-        command,
-        cwd=cwd,
-        check=True,
-        text=True,
-        capture_output=capture,
-    )
+    try:
+        return subprocess.run(
+            command,
+            cwd=cwd,
+            check=True,
+            text=True,
+            capture_output=capture,
+        )
+    except subprocess.CalledProcessError as exc:
+        if capture and exc.stderr:
+            raise RuntimeError(f"{command[0]} failed: {exc.stderr.strip()}") from exc
+        raise
 
 
 def shlex_quote(value: str) -> str:
@@ -117,6 +123,52 @@ def extract_audio(video: Path, output: Path) -> None:
             str(output),
         ]
     )
+
+
+def download_youtube(
+    url: str, workspace: Path, force: bool = False, cookies: Path | None = None,
+    cookies_from_browser: str | None = None,
+) -> Path:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("YouTube input must be an HTTP or HTTPS URL")
+    require_command("yt-dlp")
+    workspace.mkdir(parents=True, exist_ok=True)
+    marker = workspace / "youtube-source.path"
+    if marker.exists() and not force:
+        cached = Path(marker.read_text().strip())
+        if cached.is_file():
+            return cached
+    if force:
+        for old in workspace.glob("youtube-source.*"):
+            if old != marker and old.is_file():
+                old.unlink()
+    command = [
+        "yt-dlp",
+        "--no-playlist",
+        "--write-info-json",
+        "--merge-output-format",
+        "mp4",
+        "--print",
+        "after_move:filepath",
+        "-f",
+        "bv*+ba/b",
+        "-o",
+        str(workspace / "youtube-source.%(ext)s"),
+    ]
+    if cookies:
+        command.extend(("--cookies", str(cookies.expanduser().resolve())))
+    if cookies_from_browser:
+        command.extend(("--cookies-from-browser", cookies_from_browser))
+    command.append(url)
+    result = run(command, capture=True)
+    paths = [Path(line.strip()) for line in result.stdout.splitlines() if line.strip()]
+    source = next((path for path in reversed(paths) if path.is_file()), None)
+    if source is None:
+        raise RuntimeError("yt-dlp completed without producing a source video")
+    source = source.resolve()
+    marker.write_text(str(source) + "\n")
+    return source
 
 
 def transcribe(audio: Path, output: Path, model_name: str, language: str | None) -> dict[str, Any]:
@@ -639,8 +691,15 @@ def command_run(args: argparse.Namespace) -> int:
     return 0
 
 
-def add_prepare_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("video", type=Path)
+def command_youtube(args: argparse.Namespace) -> int:
+    args.workspace = args.workspace.resolve()
+    args.video = download_youtube(
+        args.url, args.workspace, args.force, args.cookies, args.cookies_from_browser
+    )
+    return command_run(args)
+
+
+def add_prepare_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--workspace", type=Path, default=Path("synapse-dub-work"))
     parser.add_argument("--script", type=Path, help="Pre-labelled dialogue JSON")
     parser.add_argument("--samples", action="append", default=[], help="Sample file or directory; repeatable")
@@ -652,6 +711,11 @@ def add_prepare_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--sample-seconds", type=float, default=12.0)
     parser.add_argument("--remap", action="store_true")
     parser.add_argument("--force", action="store_true")
+
+
+def add_prepare_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("video", type=Path)
+    add_prepare_options(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -682,6 +746,20 @@ def build_parser() -> argparse.ArgumentParser:
     custom_parser.add_argument("--backend", choices=("wav2lip",), default="wav2lip")
     custom_parser.add_argument("--output", type=Path, required=True)
     custom_parser.set_defaults(handler=command_run)
+
+    youtube_parser = subparsers.add_parser(
+        "youtube", help="Download an authorized YouTube video and translate its dialogue"
+    )
+    youtube_parser.add_argument("url")
+    add_prepare_options(youtube_parser)
+    youtube_parser.add_argument("--cookies", type=Path, help="Netscape cookies file for authorized access")
+    youtube_parser.add_argument("--cookies-from-browser", help="Browser profile understood by yt-dlp")
+    youtube_parser.add_argument("--target-language", required=True)
+    youtube_parser.add_argument("--translation-endpoint")
+    youtube_parser.add_argument("--translation-model")
+    youtube_parser.add_argument("--backend", choices=("wav2lip",), default="wav2lip")
+    youtube_parser.add_argument("--output", type=Path, required=True)
+    youtube_parser.set_defaults(handler=command_youtube, custom_prompt=None)
     return parser
 
 

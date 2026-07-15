@@ -1,7 +1,7 @@
 # Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
 
 pkgname=synapse-dub
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='ROCm video dubbing pipeline with explicit multi-speaker voice mapping'
 arch=('x86_64')
@@ -15,6 +15,7 @@ depends=(
   'coreutils'
   'curl'
   'ffmpeg'
+  'yt-dlp'
   'python'
   'python-openai-whisper'
   'python-pytorch-opt-rocm'
@@ -83,7 +84,7 @@ sha256sums=('4bc8608597f3c31ec23ad7252134425f2b2ce777bf28df2623422f4b2649fe5b'
             '93ec0823629a9b120152e721858344308d8221cf2df398a2e1eda665568b4a4e'
             'a58814742425829865d168e3a654291efb6bbb8bf1b74c2c3d564a3dce8292b1'
             '107a8b438aab2bbd18ddaa21cb08e53931f4bf50f41d45fa8b0db688d72d7666'
-            'c3e288a5fd8778d90cfe7dbbb4f4c4a1b875dac1e29de0d587ad3d18070635ae'
+            '90a68e111ecaf034e0075c127f9b83e8af524430491a18ee78b949a1445adeca'
             '2f88d98ebf91cf12c7eb63cedd848800b3c05b5dc64d77f093f8063cdb71de09')
 
 prepare() {
@@ -136,6 +137,7 @@ package() {
   install -dm755 "$pkgdir/var/lib/synapse/dub/models"
 
   install -Dm644 "$srcdir/README.synapse.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 "$startdir/WORKFLOWS.md" "$pkgdir/usr/share/doc/$pkgname/WORKFLOWS.md"
   install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 "$srcdir/wav2lip/README.md" "$pkgdir/usr/share/licenses/$pkgname/WAV2LIP-NOTICE.md"
 }
