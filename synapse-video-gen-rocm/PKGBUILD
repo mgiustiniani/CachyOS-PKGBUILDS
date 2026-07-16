@@ -1,6 +1,6 @@
 pkgname=synapse-video-gen-rocm
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Install-ready Wan2.1 VACE generative video backend for system ROCm PyTorch'
 arch=('x86_64')
 url='https://github.com/mgiustiniani/CachyOS-PKGBUILDS'
@@ -10,6 +10,7 @@ depends=(
   'ffmpeg'
   'python'
   'python-pytorch-opt-rocm'
+  'synapse-python-hf-compat'
   'python-opencv'
   'python-numpy'
   'python-pillow'
@@ -38,22 +39,17 @@ source=(
   'README.md'
   'LICENSE'
 )
-sha256sums=('f52c5c59c3aaf88cbbeb12c07379f2884bb1eacfa4a38292e1a69bf58fd2ca52'
+sha256sums=('4fd6548832b5fc12ca8fef7f02b9270411cdd6bc7b7dd88f3961b6bbbff7f93b'
             '34df3082a1b23519cd45d830157f86c5ed26e843a2cad5e2c568a8d109d90f62'
             '62c00c2c5c69d0587b369a1f5773a8e9fa3a146afe236873e3906f5c6cd14dc6'
             '1a454a80a833b68a4e9580986d293e658dbb7ef940fc9916da1496b06f12581e'
-            'c1d2af30c33923922edb4429e15add1475080fb71f99c3ee18841891093cee56'
+            '135005fb15c31d8991ba88208a41fc1ad6e8b43e9c81825dbee1da57ca995766'
             'd1947b079f75c7cb3f62ed72f6be8e4b5656e7d67889113c0ae1a22f8a93b0f8')
 
 build() {
   rm -rf runtime
   uv pip install --python /usr/bin/python --target runtime --no-deps \
     'diffusers==0.39.0' \
-    'accelerate==1.14.0' \
-    'transformers==4.57.6' \
-    'tokenizers==0.22.2' \
-    'huggingface-hub==0.36.0' \
-    'sentencepiece==0.2.1' \
     'ftfy==6.3.1'
   python -m compileall -q runtime "$startdir/synapse_video_gen"
 }

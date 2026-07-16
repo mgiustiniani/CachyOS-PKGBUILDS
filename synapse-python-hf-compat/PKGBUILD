@@ -1,0 +1,29 @@
+pkgname=synapse-python-hf-compat
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Shared pinned Hugging Face Python compatibility runtime for Synapse applications'
+arch=('x86_64')
+url='https://github.com/mgiustiniani/CachyOS-PKGBUILDS'
+license=('Apache-2.0')
+depends=('python' 'python-filelock' 'python-fsspec' 'python-numpy' 'python-packaging' 'python-psutil' 'python-pyaml' 'python-regex' 'python-requests' 'python-safetensors' 'python-tqdm' 'python-typing_extensions')
+makedepends=('uv')
+options=('!strip')
+source=('README.md')
+sha256sums=('b37fbf8e8ed8b65b202823be622819c5d5f6a62b3f75063e0cc6de3d5c343532')
+
+build() {
+  rm -rf runtime
+  uv pip install --python /usr/bin/python --target runtime --no-deps \
+    'accelerate==1.14.0' \
+    'huggingface-hub==0.36.0' \
+    'sentencepiece==0.2.1' \
+    'tokenizers==0.22.2' \
+    'transformers==4.57.6'
+}
+
+package() {
+  install -d "$pkgdir/usr/lib/$pkgname"
+  cp -a runtime/. "$pkgdir/usr/lib/$pkgname/"
+  find "$pkgdir/usr/lib/$pkgname" -type d -name __pycache__ -prune -exec rm -rf {} +
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

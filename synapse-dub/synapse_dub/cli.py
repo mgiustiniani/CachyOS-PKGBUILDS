@@ -437,6 +437,35 @@ def translate_script(
     return output
 
 
+def translate_script_specialist(
+    script: dict[str, Any], target_language: str, source_language: str, endpoint: str
+) -> dict[str, Any]:
+    texts = [str(segment["text"]) for segment in script["segments"]]
+    payload = json.dumps(
+        {
+            "texts": texts,
+            "source_language": source_language,
+            "target_language": target_language,
+        }
+    ).encode()
+    request = urllib.request.Request(
+        endpoint.rstrip("/") + "/text/translations",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=900) as response:
+        body = json.load(response)
+    translated = body.get("translations")
+    if not isinstance(translated, list) or len(translated) != len(texts):
+        raise RuntimeError("Specialist translation server returned an invalid segment list")
+    output = json.loads(json.dumps(script))
+    output["language"] = target_language
+    output["translation_backend"] = "seamless-m4t-v2-large"
+    for segment, text in zip(output["segments"], translated, strict=True):
+        segment["text"] = str(text).strip()
+    return output
+
+
 def customize_script(
     script: dict[str, Any], brief: str, target_language: str, endpoint: str, model: str,
     api_key: str | None,
@@ -761,6 +790,11 @@ def complete_dub(
     config = load_config()
     endpoint = args.translation_endpoint or config.get("TRANSLATION_ENDPOINT", "http://127.0.0.1:8000/v1")
     model = args.translation_model or config.get("TRANSLATION_MODEL", "deepseek-v4-flash")
+    translation_backend = getattr(args, "translation_backend", None) or config.get("TRANSLATION_BACKEND", "llm")
+    specialist_endpoint = (
+        getattr(args, "specialist_translation_endpoint", None)
+        or config.get("SPECIALIST_TRANSLATION_ENDPOINT", "http://127.0.0.1:8091/v1")
+    )
     if getattr(args, "custom_prompt", None):
         script = customize_script(
             script,
@@ -772,13 +806,19 @@ def complete_dub(
         )
         write_json(workspace / "dialogue-custom.json", script)
     elif args.target_language:
-        script = translate_script(
-            script,
-            args.target_language,
-            endpoint,
-            model,
-            os.environ.get("OPENAI_API_KEY"),
-        )
+        if translation_backend == "specialist":
+            source_language = args.source_language or script.get("language") or "en"
+            script = translate_script_specialist(
+                script, args.target_language, source_language, specialist_endpoint
+            )
+        else:
+            script = translate_script(
+                script,
+                args.target_language,
+                endpoint,
+                model,
+                os.environ.get("OPENAI_API_KEY"),
+            )
         write_json(workspace / "dialogue-translated.json", script)
     language = args.target_language or script.get("language") or args.source_language
     if not language:
@@ -860,8 +900,10 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="Run the complete dubbing pipeline")
     add_prepare_arguments(run_parser)
     run_parser.add_argument("--target-language", help="Enable optional translation and set XTTS output language")
+    run_parser.add_argument("--translation-backend", choices=("llm", "specialist"))
     run_parser.add_argument("--translation-endpoint")
     run_parser.add_argument("--translation-model")
+    run_parser.add_argument("--specialist-translation-endpoint")
     run_parser.add_argument("--backend", choices=("wav2lip", "none"), default="wav2lip")
     run_parser.add_argument("--output", type=Path, required=True)
     run_parser.set_defaults(handler=command_run, custom_prompt=None)
@@ -886,8 +928,10 @@ def build_parser() -> argparse.ArgumentParser:
     youtube_parser.add_argument("--cookies", type=Path, help="Netscape cookies file for authorized access")
     youtube_parser.add_argument("--cookies-from-browser", help="Browser profile understood by yt-dlp")
     youtube_parser.add_argument("--target-language", required=True)
+    youtube_parser.add_argument("--translation-backend", choices=("llm", "specialist"))
     youtube_parser.add_argument("--translation-endpoint")
     youtube_parser.add_argument("--translation-model")
+    youtube_parser.add_argument("--specialist-translation-endpoint")
     youtube_parser.add_argument("--backend", choices=("none", "wav2lip"), default="none")
     youtube_parser.add_argument("--output", type=Path, required=True)
     youtube_parser.set_defaults(handler=command_youtube, custom_prompt=None)
@@ -899,8 +943,10 @@ def build_parser() -> argparse.ArgumentParser:
     generative_parser.add_argument("--visual-prompt", required=True)
     generative_parser.add_argument("--dialogue-prompt", help="Optional creative brief replacing source dialogue")
     generative_parser.add_argument("--target-language", required=True)
+    generative_parser.add_argument("--translation-backend", choices=("llm", "specialist"))
     generative_parser.add_argument("--translation-endpoint")
     generative_parser.add_argument("--translation-model")
+    generative_parser.add_argument("--specialist-translation-endpoint")
     generative_parser.add_argument("--backend", choices=("wav2lip", "none"), default="wav2lip")
     generative_parser.add_argument("--visual-width", type=int, default=832)
     generative_parser.add_argument("--visual-height", type=int, default=480)

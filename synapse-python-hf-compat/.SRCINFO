@@ -1,0 +1,25 @@
+pkgbase = synapse-python-hf-compat
+	pkgdesc = Shared pinned Hugging Face Python compatibility runtime for Synapse applications
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/mgiustiniani/CachyOS-PKGBUILDS
+	arch = x86_64
+	license = Apache-2.0
+	makedepends = uv
+	depends = python
+	depends = python-filelock
+	depends = python-fsspec
+	depends = python-numpy
+	depends = python-packaging
+	depends = python-psutil
+	depends = python-pyaml
+	depends = python-regex
+	depends = python-requests
+	depends = python-safetensors
+	depends = python-tqdm
+	depends = python-typing_extensions
+	options = !strip
+	source = README.md
+	sha256sums = b37fbf8e8ed8b65b202823be622819c5d5f6a62b3f75063e0cc6de3d5c343532
+
+pkgname = synapse-python-hf-compat

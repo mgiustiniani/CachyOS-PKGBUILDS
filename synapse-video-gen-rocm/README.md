@@ -1,9 +1,9 @@
 # Synapse Video Gen ROCm
 
 Shared, install-ready generative visual backend for Synapse products. It uses
-Wan2.1 VACE 1.3B through system ROCm PyTorch and an application-private,
-pacman-owned Diffusers compatibility layer. It never creates a venv and does
-not duplicate PyTorch.
+Wan2.1 VACE 1.3B through system ROCm PyTorch, an application-private Diffusers
+layer, and the shared `synapse-python-hf-compat` runtime. It never creates a
+venv and does not duplicate PyTorch or compiled Hugging Face components.
 
 Model weights are not part of the package or ISO. Provision the pinned
 Apache-2.0 model with:

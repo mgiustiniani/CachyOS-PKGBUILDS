@@ -1,0 +1,3 @@
+u synapse-translate - "Synapse translation service" /var/lib/synapse/translate
+m synapse-translate video
+m synapse-translate render

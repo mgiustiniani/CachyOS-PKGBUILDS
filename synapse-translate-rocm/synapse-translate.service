@@ -1,0 +1,26 @@
+[Unit]
+Description=Synapse ROCm specialist translation server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=synapse-translate
+Group=synapse-translate
+SupplementaryGroups=video render
+EnvironmentFile=-/etc/synapse/translate.conf
+Environment=HOME=/var/cache/synapse-translate
+Environment=XDG_CACHE_HOME=/var/cache/synapse-translate
+CacheDirectory=synapse-translate
+ExecStart=/usr/bin/synapse-translate-server serve
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=900
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/lib/synapse/translate/models
+
+[Install]
+WantedBy=multi-user.target

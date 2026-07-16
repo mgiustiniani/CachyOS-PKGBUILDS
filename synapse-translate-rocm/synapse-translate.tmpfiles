@@ -1,0 +1,2 @@
+d /var/lib/synapse/translate 0755 synapse-translate synapse-translate -
+d /var/lib/synapse/translate/models 0755 synapse-translate synapse-translate -

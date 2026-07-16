@@ -84,6 +84,17 @@ is rejected. Translation prompts include each source time slot and a spoken-text
 budget. Synthesized clips are pitch-preservingly fitted and hard-limited to their
 own slots, so adjacent speakers or lines cannot overlap.
 
+For specialist local translation, install `synapse-translate-rocm` and use:
+
+```sh
+synapse-dub run VIDEO --translation-backend specialist \
+  --specialist-translation-endpoint http://127.0.0.1:8091/v1 \
+  --target-language it --output translated.mp4
+```
+
+The specialist backend uses SeamlessM4T-v2-large; the `llm` backend remains
+available for creative rewriting and duration adaptation.
+
 ## Fully generative visual production
 
 Install and provision the shared Wan2.1 VACE ROCm backend, normally through

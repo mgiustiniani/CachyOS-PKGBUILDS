@@ -1,8 +1,8 @@
 # Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
 
 pkgname=synapse-dub
-pkgver=0.4.0
-pkgrel=7
+pkgver=0.5.0
+pkgrel=1
 pkgdesc='ROCm video dubbing pipeline with explicit multi-speaker voice mapping'
 arch=('x86_64')
 url='https://synapseos.it'
@@ -62,7 +62,10 @@ depends=(
   'python-imageio'
   'rocm-core'
 )
-optdepends=('synapse-video-gen-rocm: generative visual video workflow')
+optdepends=(
+  'synapse-video-gen-rocm: generative visual video workflow'
+  'synapse-translate-rocm: specialist local speech and text translation'
+)
 makedepends=('git' 'uv')
 optdepends=(
   'pipewire-audio: preview and monitor voice samples'
@@ -81,11 +84,11 @@ source=(
 )
 sha256sums=('4bc8608597f3c31ec23ad7252134425f2b2ce777bf28df2623422f4b2649fe5b'
             '484c4d738df674b54fecbd75ee0c40ed01ab9c28daa3b7f086a0e523c76d2e16'
-            '94160d3c0aed6b468df00f5d65bb01410b2eaefb3ef7255e62d45a6d78ffd6b7'
+            '4e01019990ec7f29dca3aa416eb2845a8a553774647612eb9ec8309fe86d25c8'
             '93ec0823629a9b120152e721858344308d8221cf2df398a2e1eda665568b4a4e'
             'a58814742425829865d168e3a654291efb6bbb8bf1b74c2c3d564a3dce8292b1'
             '107a8b438aab2bbd18ddaa21cb08e53931f4bf50f41d45fa8b0db688d72d7666'
-            '170fc38575597201de272226008c26ae9ff6ebe39b32c0b8aaec022820992f35'
+            '22df7acc86e483e2e9d256273eb549879d7f006a5c630fa900c6c91675480e69'
             '2f88d98ebf91cf12c7eb63cedd848800b3c05b5dc64d77f093f8063cdb71de09')
 
 prepare() {

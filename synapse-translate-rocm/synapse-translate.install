@@ -1,0 +1,15 @@
+post_install() {
+  systemd-sysusers
+  systemd-tmpfiles --create synapse-translate.conf
+  cat <<'EOF'
+Synapse Translation ROCm installed.
+Provision the external SeamlessM4T-v2-large model through Calamares Server
+Setup or run `sudo synapse-translate-models download`, then enable
+`synapse-translate.service`.
+EOF
+}
+
+post_upgrade() {
+  systemd-sysusers
+  systemd-tmpfiles --create synapse-translate.conf
+}

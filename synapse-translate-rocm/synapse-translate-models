@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo='facebook/seamless-m4t-v2-large'
+revision='5f8cc790b19fc3f67a61c105133b20b34e3dcb76'
+root=$(sed -n 's/^MODEL_ROOT=//p' /etc/synapse/translate.conf 2>/dev/null | tail -1)
+root=${root:-/var/lib/synapse/translate/models/seamless-m4t-v2-large}
+action=${1:-}; [[ $# -gt 0 ]] && shift
+source_dir=
+while (($#)); do
+  case "$1" in
+    --root) root=$2; shift 2 ;;
+    --source) source_dir=$2; shift 2 ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+validate() {
+  local missing=0 file
+  for file in config.json generation_config.json model.safetensors.index.json \
+              preprocessor_config.json tokenizer_config.json tokenizer.model; do
+    [[ -s "$root/$file" ]] || { echo "Missing: $root/$file" >&2; missing=1; }
+  done
+  [[ $(find "$root" -maxdepth 1 -type f -name 'model-*.safetensors' | wc -l) -ge 2 ]] || {
+    echo "Missing SeamlessM4T safetensor shards" >&2; missing=1;
+  }
+  [[ $missing -eq 0 ]] || return 1
+  if [[ -f "$root/.snapshot-revision" ]] && [[ $(<"$root/.snapshot-revision") != "$revision" ]]; then
+    echo "Unexpected model revision" >&2; return 1
+  fi
+  echo "SeamlessM4T-v2-large valid: $root"
+}
+
+case "$action" in
+  download)
+    command -v hf >/dev/null || { echo "The huggingface-hub CLI is required" >&2; exit 1; }
+    install -d -m0755 "$root"
+    hf download "$repo" --revision "$revision" --local-dir "$root" \
+      --include '*.json' --include '*.model' --include '*.safetensors' --include 'README.md'
+    printf '%s\n' "$revision" >"$root/.snapshot-revision"
+    validate
+    ;;
+  import)
+    [[ -n "$source_dir" && -d "$source_dir" ]] || { echo "--source DIR is required" >&2; exit 2; }
+    install -d -m0755 "$root"
+    rsync -a --delete --exclude .cache/ "$source_dir/" "$root/"
+    validate
+    ;;
+  validate) validate ;;
+  *) echo "Usage: synapse-translate-models {download|import|validate} [--root DIR] [--source DIR]" >&2; exit 2 ;;
+esac

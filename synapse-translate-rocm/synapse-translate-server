@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export PYTHONPATH="/usr/lib/synapse-translate-rocm/python:/usr/lib/synapse-python-hf-compat:/usr/lib/synapse-translate-rocm${PYTHONPATH:+:$PYTHONPATH}"
+export PYTORCH_HIP_ALLOC_CONF="${PYTORCH_HIP_ALLOC_CONF:-expandable_segments:True}"
+exec /usr/bin/python -m synapse_translate.server "$@"
