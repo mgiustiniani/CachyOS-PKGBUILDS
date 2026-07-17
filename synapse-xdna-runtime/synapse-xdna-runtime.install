@@ -1,0 +1,9 @@
+post_install() {
+  echo 'AMD XDNA runtime integration installed.'
+  echo 'Log out and back in before using the NPU so the memlock limit takes effect.'
+  echo 'Then run: synapse-xdna doctor && synapse-xdna proof'
+}
+
+post_upgrade() {
+  post_install
+}

@@ -1,0 +1,21 @@
+schema_version = 1
+id = "whisper-xdna2"
+name = "Whisper Large v3 Turbo for AMD XDNA2"
+description = "Static-shape ONNX encoder and decoder exported by AMD for the Ryzen AI VitisAI execution provider"
+product = "voice-ai-xdna"
+default_root = "/var/lib/synapse/models"
+license = "MIT"
+
+[[components]]
+id = "whisper-large-v3-turbo-onnx-npu"
+relative_path = "onnx/speech-recognition/amd/whisper-large-v3-turbo-npu"
+source_type = "huggingface"
+repo = "amd/whisper-large-turbo-onnx-npu"
+revision = "047fc65d09d46def9f42996ee5eaed0d8e2f0dd4"
+include = ["README.md", "decoder_model.onnx", "encoder_model.onnx", "encoder_model.onnx.data"]
+required = [
+  { path = "README.md", size = 372 },
+  { path = "decoder_model.onnx", size = 691461757, sha256 = "7438e63a9ae8297a5ed002d5e2731ada1bf28c6dc071d22da02dbd093227f541" },
+  { path = "encoder_model.onnx", size = 2728261, sha256 = "da814e022fb1c9f159c933efb65ef81fe7b1350c8ef2cdde7a8591a21241cc57" },
+  { path = "encoder_model.onnx.data", size = 2547974144, sha256 = "a90ce43e25e0d293f1cb4a00e4bab2157ccd05ec39ec4a3d32cfb29999c2b77e" },
+]
