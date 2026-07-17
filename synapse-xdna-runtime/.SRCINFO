@@ -1,0 +1,23 @@
+pkgbase = synapse-xdna-runtime
+	pkgdesc = AMD XDNA NPU runtime integration, validation payload, and proof tooling
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/mgiustiniani/CachyOS-PKGBUILDS
+	install = synapse-xdna-runtime.install
+	arch = x86_64
+	license = Apache-2.0
+	depends = python
+	depends = xrt
+	depends = xrt-plugin-amdxdna
+	noextract = xrt_smi_strx.a
+	options = !strip
+	source = xrt_smi_strx.a::https://github.com/Xilinx/VTD/raw/c79b5d21568a4ffa5b0612a8279b352fc4e1109a/archive/strx/xrt_smi_strx.a
+	source = synapse-xdna
+	source = 99-amdxdna.conf
+	source = README.md
+	sha256sums = 57384f0d5cf3fc604b00540ed9b7542826cd961c30a2f3207357c972cc3ef32c
+	sha256sums = c8fe61c7339e558b5c48ab5324f9d9bd63a2753340cce73336bfb68d267e0b45
+	sha256sums = 25855b5063a1b8c17b520ca6fd87d53bb78308a6bbe877f50065de97437a7f7d
+	sha256sums = c621917e98b399f82fc412270fad7778157a4f24798d15b2a295a6906c7400a5
+
+pkgname = synapse-xdna-runtime
