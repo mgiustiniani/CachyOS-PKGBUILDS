@@ -1,0 +1,39 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+
+pkgname=synapse-model-manager
+pkgver=0.1.0
+pkgrel=2
+pkgdesc='Shared external AI model discovery, acquisition, verification, and activation for Synapse Linux'
+arch=('any')
+url='https://synapseos.it'
+license=('MIT')
+depends=(
+  'python'
+  'python-huggingface-hub'
+  'util-linux'
+)
+checkdepends=('python')
+
+check() {
+  cd "$startdir"
+  python -m unittest discover -s tests -v
+}
+
+package() {
+  install -dm755 "$pkgdir/usr/lib/synapse-model-manager/synapse_model_manager"
+  install -Dm644 "$startdir/synapse_model_manager/__init__.py" \
+    "$pkgdir/usr/lib/synapse-model-manager/synapse_model_manager/__init__.py"
+  install -Dm644 "$startdir/synapse_model_manager/core.py" \
+    "$pkgdir/usr/lib/synapse-model-manager/synapse_model_manager/core.py"
+  install -Dm644 "$startdir/synapse_model_manager/cli.py" \
+    "$pkgdir/usr/lib/synapse-model-manager/synapse_model_manager/cli.py"
+  install -Dm755 "$startdir/synapse-model" "$pkgdir/usr/bin/synapse-model"
+
+  install -dm755 "$pkgdir/usr/share/synapse/models.d"
+  install -m644 "$startdir"/manifests/*.toml "$pkgdir/usr/share/synapse/models.d/"
+
+  install -Dm644 "$startdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 "$startdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -dm755 "$pkgdir/var/lib/synapse/model-manager"
+  install -dm755 "$pkgdir/var/lib/synapse/models"
+}

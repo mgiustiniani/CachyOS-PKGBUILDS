@@ -1,0 +1,24 @@
+schema_version = 1
+id = "translate-seamless-m4t"
+name = "SeamlessM4T v2 Large"
+description = "Primary multilingual speech and text translation model for Synapse Translate"
+product = "translate"
+default_root = "/var/lib/synapse/models"
+license = "CC-BY-NC-4.0; see upstream model card"
+
+[[components]]
+id = "seamless-m4t-v2-large"
+relative_path = "safetensors/translation/seamless-m4t-v2-large"
+source_type = "huggingface"
+repo = "facebook/seamless-m4t-v2-large"
+revision = "5f8cc790b19fc3f67a61c105133b20b34e3dcb76"
+include = ["*.json", "*.model", "*.safetensors", "README.md"]
+required = [
+  { path = "config.json" },
+  { path = "generation_config.json" },
+  { path = "model.safetensors.index.json" },
+  { path = "preprocessor_config.json" },
+  { path = "tokenizer_config.json" },
+  { path = "tokenizer.model" },
+]
+required_globs = ["model-*.safetensors"]

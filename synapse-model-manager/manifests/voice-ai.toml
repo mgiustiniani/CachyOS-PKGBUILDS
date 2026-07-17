@@ -1,0 +1,34 @@
+schema_version = 1
+id = "voice-ai"
+name = "Synapse Voice AI"
+description = "Chatterbox multilingual voice cloning and Whisper speech recognition"
+product = "voice-ai"
+default_root = "/var/lib/synapse/models"
+license = "mixed; see upstream model cards"
+
+[[components]]
+id = "chatterbox"
+relative_path = "safetensors/voice-ai/huggingface/ResembleAI/chatterbox"
+source_type = "huggingface"
+repo = "ResembleAI/chatterbox"
+revision = "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18"
+include = ["README.md", "Cangjie5_TC.json", "conds.pt", "grapheme_mtl_merged_expanded_v1.json", "s3gen.pt", "t3_mtl23ls_v2.safetensors", "ve.pt"]
+required = [
+  { path = "Cangjie5_TC.json" },
+  { path = "conds.pt" },
+  { path = "grapheme_mtl_merged_expanded_v1.json" },
+  { path = "ve.pt", sha256 = "4b16d836bc598509860f6fa068165a8bb5e9ac84f05582dfcf278a5a372879f1" },
+  { path = "t3_mtl23ls_v2.safetensors", sha256 = "b1237586127ce98e7800a68e49938eb5092846862aabcb6e17b2fda7889a6c75" },
+  { path = "s3gen.pt", sha256 = "9b9ff07e60b20c136e2b1b3d7563a24604e8d2c4c267888d1ee929dd0151d2a3" },
+]
+
+[[components]]
+id = "whisper-large-v3-turbo-q8"
+relative_path = "ggml/speech-recognition/whisper.cpp"
+source_type = "huggingface"
+repo = "ggerganov/whisper.cpp"
+revision = "5359861c739e955e79d9a303bcbc70fb988958b1"
+include = ["ggml-large-v3-turbo-q8_0.bin"]
+required = [
+  { path = "ggml-large-v3-turbo-q8_0.bin", size = 874188075, sha256 = "317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1" },
+]

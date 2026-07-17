@@ -1,0 +1,23 @@
+schema_version = 1
+id = "ds4-q2-imatrix"
+name = "DeepSeek V4 Flash Q2 imatrix"
+description = "Recommended DS4 and future llama.cpp GGUF bundle for 96-128 GB systems"
+product = "llm"
+default_root = "/var/lib/synapse/models"
+license = "MIT model code; see upstream model card for weights"
+
+[[components]]
+id = "deepseek-v4-flash-q2"
+relative_path = "gguf/deepseek4-flash-284B-GGUF"
+source_type = "huggingface"
+repo = "antirez/deepseek-v4-gguf"
+revision = "a88c423b511666d7ff7a4dcaee651669312bea97"
+revision_required = false
+include = [
+  "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf",
+  "DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf",
+]
+required = [
+  { path = "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf", size = 86720111488, sha256 = "efc7ed607ff27076e3e501fc3fefefa33c0ed8cf1eff483a2b7fdc0c2e616668" },
+  { path = "DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf", size = 3807602400, sha256 = "afd481ee689dce9037f70f39085fcdae5a5b096d521cdad43b19fa52bf8f4083" },
+]

@@ -1,0 +1,24 @@
+schema_version = 1
+id = "video-wan-vace"
+name = "Wan2.1 VACE 1.3B"
+description = "Generative video model for Synapse Video Gen"
+product = "video-gen"
+default_root = "/var/lib/synapse/models"
+license = "Apache-2.0"
+
+[[components]]
+id = "wan-vace-1.3b"
+relative_path = "safetensors/video-generation/wan-vace-1.3b"
+source_type = "huggingface"
+repo = "Wan-AI/Wan2.1-VACE-1.3B-diffusers"
+revision = "ec4d2cb062b548996b179d493fdd05340de702a1"
+required = [
+  { path = "model_index.json" },
+  { path = "scheduler/scheduler_config.json" },
+  { path = "text_encoder/config.json" },
+  { path = "tokenizer/spiece.model" },
+  { path = "transformer/config.json" },
+  { path = "vae/config.json" },
+  { path = "vae/diffusion_pytorch_model.safetensors" },
+]
+required_globs = ["text_encoder/*.safetensors", "transformer/*.safetensors"]

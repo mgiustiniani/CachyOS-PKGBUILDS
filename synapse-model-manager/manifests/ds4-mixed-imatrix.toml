@@ -1,0 +1,23 @@
+schema_version = 1
+id = "ds4-mixed-imatrix"
+name = "DeepSeek V4 Flash mixed Q2/Q4 imatrix"
+description = "Higher-quality mixed DS4 GGUF bundle for 128 GB or larger systems"
+product = "llm"
+default_root = "/var/lib/synapse/models"
+license = "MIT model code; see upstream model card for weights"
+
+[[components]]
+id = "deepseek-v4-flash-mixed"
+relative_path = "gguf/deepseek4-flash-284B-GGUF"
+source_type = "huggingface"
+repo = "antirez/deepseek-v4-gguf"
+revision = "a88c423b511666d7ff7a4dcaee651669312bea97"
+revision_required = false
+include = [
+  "DeepSeek-V4-Flash-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-fixed.gguf",
+  "DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf",
+]
+required = [
+  { path = "DeepSeek-V4-Flash-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-fixed.gguf", size = 97591747456, sha256 = "edabc92af63ad8b139f00087fbfc10a4072f37b7597f4fd9ad1dfa6f83002396" },
+  { path = "DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf", size = 3807602400, sha256 = "afd481ee689dce9037f70f39085fcdae5a5b096d521cdad43b19fa52bf8f4083" },
+]

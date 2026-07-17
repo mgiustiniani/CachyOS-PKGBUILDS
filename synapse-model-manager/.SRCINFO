@@ -1,0 +1,13 @@
+pkgbase = synapse-model-manager
+	pkgdesc = Shared external AI model discovery, acquisition, verification, and activation for Synapse Linux
+	pkgver = 0.1.0
+	pkgrel = 2
+	url = https://synapseos.it
+	arch = any
+	license = MIT
+	checkdepends = python
+	depends = python
+	depends = python-huggingface-hub
+	depends = util-linux
+
+pkgname = synapse-model-manager

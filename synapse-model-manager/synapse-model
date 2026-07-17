@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export PYTHONPATH="/usr/lib/synapse-model-manager${PYTHONPATH:+:$PYTHONPATH}"
+exec /usr/bin/python -m synapse_model_manager.cli "$@"

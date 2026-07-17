@@ -1,0 +1,56 @@
+schema_version = 1
+id = "trellis2"
+name = "TRELLIS.2"
+description = "TRELLIS.2 image-to-3D model set with sparse decoder, DINOv3 and background removal"
+product = "trellis2"
+default_root = "/var/lib/synapse/models"
+license = "mixed; see upstream model cards"
+
+[[components]]
+id = "trellis2-4b"
+relative_path = "safetensors/trellis2/huggingface/microsoft/TRELLIS.2-4B"
+source_type = "huggingface"
+repo = "microsoft/TRELLIS.2-4B"
+revision = "af44b45f2e35a493886929c6d786e563ec68364d"
+required = [ { path = "pipeline.json" } ]
+required_globs = ["ckpts/*.safetensors", "ckpts/*.json"]
+
+[[components]]
+id = "trellis-image-large"
+relative_path = "safetensors/trellis2/huggingface/microsoft/TRELLIS-image-large"
+source_type = "huggingface"
+repo = "microsoft/TRELLIS-image-large"
+revision = "25e0d31ffbebe4b5a97464dd851910efc3002d96"
+required = [
+  { path = "ckpts/ss_dec_conv3d_16l8_fp16.json" },
+  { path = "ckpts/ss_dec_conv3d_16l8_fp16.safetensors" },
+]
+
+[[components]]
+id = "birefnet"
+relative_path = "safetensors/trellis2/huggingface/ZhengPeng7/BiRefNet"
+source_type = "huggingface"
+repo = "ZhengPeng7/BiRefNet"
+revision = "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4"
+required = [
+  { path = "config.json" },
+  { path = "birefnet.py" },
+  { path = "model.safetensors" },
+]
+
+[[components]]
+id = "dinov3"
+relative_path = "safetensors/trellis2/dino/facebook/dinov3-vitl16-pretrain-lvd1689m"
+source_type = "http-files"
+required = [
+  { path = "config.json" },
+  { path = "preprocessor_config.json" },
+  { path = "model.safetensors" },
+]
+http_files = [
+  { path = "config.json", url = "https://www.modelscope.cn/models/facebook/dinov3-vitl16-pretrain-lvd1689m/resolve/master/config.json" },
+  { path = "preprocessor_config.json", url = "https://www.modelscope.cn/models/facebook/dinov3-vitl16-pretrain-lvd1689m/resolve/master/preprocessor_config.json" },
+  { path = "LICENSE.md", url = "https://www.modelscope.cn/models/facebook/dinov3-vitl16-pretrain-lvd1689m/resolve/master/LICENSE.md" },
+  { path = "README.md", url = "https://www.modelscope.cn/models/facebook/dinov3-vitl16-pretrain-lvd1689m/resolve/master/README.md" },
+  { path = "model.safetensors", url = "https://www.modelscope.cn/models/facebook/dinov3-vitl16-pretrain-lvd1689m/resolve/master/model.safetensors" },
+]
