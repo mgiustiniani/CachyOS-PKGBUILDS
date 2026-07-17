@@ -51,6 +51,32 @@ required = [
 ''',
             encoding="utf-8",
         )
+        web_source = self.root / "web-source.bin"
+        web_source.write_bytes(b"web-model-fixture\n")
+        web_hash = hashlib.sha256(web_source.read_bytes()).hexdigest()
+        (self.manifests / "web-fixture.toml").write_text(
+            f'''schema_version = 1
+id = "web-fixture"
+name = "Web Fixture"
+description = "Web acquisition test"
+product = "tests"
+default_root = "{self.destination}"
+license = "MIT"
+
+[[components]]
+id = "web-model"
+relative_path = "gguf/test/web"
+source_type = "http-files"
+revision = "web-revision"
+required = [
+  {{ path = "model.bin", size = {web_source.stat().st_size}, sha256 = "{web_hash}" }},
+]
+http_files = [
+  {{ path = "model.bin", url = "{web_source.as_uri()}", size = {web_source.stat().st_size}, sha256 = "{web_hash}" }},
+]
+''',
+            encoding="utf-8",
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -119,6 +145,19 @@ required = [
         payload = json.loads(result.stdout)
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["errors"][0]["code"], "validation_failed")
+
+    def test_web_install_downloads_verifies_and_activates(self) -> None:
+        result = self.run_cli(
+            "install", "web-fixture", "--source", "web", "--mode", "copy",
+            "--root", str(self.destination), "--json",
+        )
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["source"], "web")
+        self.assertEqual(
+            (self.destination / "gguf/test/web/model.bin").read_bytes(),
+            b"web-model-fixture\n",
+        )
 
     def test_jsonl_emits_events_and_final_result(self) -> None:
         result = self.run_cli(
