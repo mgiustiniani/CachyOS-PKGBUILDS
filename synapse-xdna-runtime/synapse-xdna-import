@@ -1,0 +1,261 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Post-install importer for AMD Ryzen AI Software. Proprietary payloads are never
+# embedded in this script, its package, the pacman repository, or the ISO.
+
+set -euo pipefail
+
+VERSION="1.7.1"
+EXPECTED_RUNTIME_SHA256="d9dff0e95a09f06921fc7633e8dd8ec13949953c407f04340c07ad60eb362dc3"
+DEFAULT_TARGET="/opt/synapse/xdna/ryzen-ai/${VERSION}"
+PRIVATE_LICENSE="/var/lib/synapse-private/licenses/Xilinx.lic"
+LICENSE_GROUP="synapse-xdna"
+CONFIG_FILE="/etc/synapse/xdna-runtime.conf"
+PROFILE_FILE="/etc/profile.d/synapse-xdna.sh"
+CONTAINER_MEMBER="models/source/ryzen_ai-${VERSION}.tgz"
+
+usage() {
+    cat <<EOF
+Usage:
+  synapse-xdna-import discover [--json]
+  synapse-xdna-import install --accept-amd-eula [options]
+
+Options for install:
+  --source PATH       Direct ryzen_ai-${VERSION}.tgz, containing model_source tar, or auto
+  --license PATH      Xilinx license path or auto
+  --target PATH       Runtime installation root (default: ${DEFAULT_TARGET})
+  --keep-staging      Keep temporary extracted files for diagnostics
+  --accept-amd-eula   Explicitly accept AMD and Ryzen AI third-party EULAs
+  --json              Emit only a final JSON document on stdout
+
+The private SDK archive and license are imported after operating-system
+installation. They are not copied into the Synapse ISO or pacman packages.
+EOF
+}
+
+json_escape() {
+    python -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+}
+
+find_runtime() {
+    local candidate
+    for candidate in \
+        /mnt/models/runtime/amd/ryzen-ai/${VERSION}/ryzen_ai-${VERSION}.tgz \
+        /run/media/*/*/runtime/amd/ryzen-ai/${VERSION}/ryzen_ai-${VERSION}.tgz \
+        /run/media/*/*/models/runtime/amd/ryzen-ai/${VERSION}/ryzen_ai-${VERSION}.tgz \
+        /run/media/*/*/archivi/linux_iso/cachyos/model_source.tar.gz \
+        /media/*/*/archivi/linux_iso/cachyos/model_source.tar.gz; do
+        [[ -f "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+    done
+    return 1
+}
+
+find_license() {
+    local runtime_path="${1:-}" candidate
+    if [[ -n "$runtime_path" ]]; then
+        for candidate in \
+            "$(dirname "$runtime_path")/Xilinx.lic" \
+            "$(dirname "$(dirname "$runtime_path")")/Xilinx.lic"; do
+            [[ -s "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+        done
+    fi
+    for candidate in \
+        /mnt/models/runtime/amd/ryzen-ai/${VERSION}/Xilinx.lic \
+        /run/media/*/*/runtime/amd/ryzen-ai/${VERSION}/Xilinx.lic \
+        /run/media/*/*/models/runtime/amd/ryzen-ai/${VERSION}/Xilinx.lic \
+        /run/media/*/*/archivi/linux_iso/cachyos/Xilinx.lic \
+        /media/*/*/archivi/linux_iso/cachyos/Xilinx.lic; do
+        [[ -s "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+    done
+    return 1
+}
+
+emit_discovery() {
+    local as_json="$1" runtime_path license_path
+    runtime_path="$(find_runtime || true)"
+    license_path="$(find_license "$runtime_path" || true)"
+    if [[ "$as_json" == true ]]; then
+        python - "$runtime_path" "$license_path" <<'PY'
+import json, os, sys
+runtime, license_path = sys.argv[1:]
+print(json.dumps({
+    "schema_version": 1,
+    "runtime_found": bool(runtime),
+    "runtime_source": runtime or None,
+    "runtime_size": os.path.getsize(runtime) if runtime else None,
+    "license_found": bool(license_path),
+    "license_source": license_path or None,
+}, sort_keys=True, separators=(",", ":")))
+PY
+    else
+        printf 'Ryzen AI runtime: %s\n' "${runtime_path:-not found}"
+        printf 'Xilinx license: %s\n' "${license_path:-not found}"
+    fi
+    [[ -n "$runtime_path" && -n "$license_path" ]]
+}
+
+command="${1:-}"
+[[ -n "$command" ]] || { usage; exit 2; }
+shift
+
+if [[ "$command" == discover ]]; then
+    as_json=false
+    [[ "${1:-}" == --json ]] && as_json=true
+    emit_discovery "$as_json"
+    exit $?
+fi
+[[ "$command" == install ]] || { usage; exit 2; }
+
+source_path=auto
+license_path=auto
+target="$DEFAULT_TARGET"
+accept_eula=false
+keep_staging=false
+as_json=false
+while (($#)); do
+    case "$1" in
+        --source) source_path="${2:?missing --source value}"; shift 2 ;;
+        --license) license_path="${2:?missing --license value}"; shift 2 ;;
+        --target) target="${2:?missing --target value}"; shift 2 ;;
+        --accept-amd-eula) accept_eula=true; shift ;;
+        --keep-staging) keep_staging=true; shift ;;
+        --json) as_json=true; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+[[ "$accept_eula" == true ]] || {
+    echo "Explicit EULA acceptance is required: --accept-amd-eula" >&2
+    echo "AMD EULA: https://account.amd.com/content/dam/account/en/licenses/download/amd-end-user-license-agreement.pdf" >&2
+    echo "Third-party notices: https://account.amd.com/content/dam/account/en/licenses/download/ryzen-ai-${VERSION}-linux-tpn-license.pdf" >&2
+    exit 2
+}
+[[ $EUID -eq 0 ]] || { echo "Run install as root (sudo)." >&2; exit 2; }
+[[ "$source_path" != auto ]] || source_path="$(find_runtime || true)"
+[[ -n "$source_path" && -f "$source_path" ]] || { echo "Ryzen AI ${VERSION} source not found." >&2; exit 3; }
+[[ "$license_path" != auto ]] || license_path="$(find_license "$source_path" || true)"
+[[ -n "$license_path" && -s "$license_path" ]] || { echo "Xilinx license not found." >&2; exit 3; }
+command -v python3.12 >/dev/null || { echo "python3.12 is required (install synapse-python312)." >&2; exit 4; }
+[[ ! -e "$target" ]] || { echo "Target already exists: $target" >&2; exit 5; }
+
+tmp="$(mktemp -d /var/tmp/synapse-xdna-import.XXXXXX)"
+cleanup() {
+    [[ "$keep_staging" == true ]] || rm -rf "$tmp"
+}
+trap cleanup EXIT
+payload="$tmp/ryzen_ai-${VERSION}.tgz"
+
+if [[ "$(basename "$source_path")" == "ryzen_ai-${VERSION}.tgz" ]]; then
+    cp --reflink=auto "$source_path" "$payload"
+else
+    tar -xOf "$source_path" "$CONTAINER_MEMBER" > "$payload"
+fi
+actual_sha="$(sha256sum "$payload" | awk '{print $1}')"
+[[ "$actual_sha" == "$EXPECTED_RUNTIME_SHA256" ]] || {
+    echo "Ryzen AI archive checksum mismatch: $actual_sha" >&2
+    exit 6
+}
+
+mkdir "$tmp/payload"
+tar -xzf "$payload" -C "$tmp/payload"
+
+# Ryzen AI 1.7.1 pins websockets 10.4, whose source distribution omits
+# setuptools from its isolated build requirements. Apply the documented Linux
+# workaround inside the temporary installer copy only.
+python3.12 - "$tmp/payload/install_ryzen_ai.sh" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = '"${path_to_venv}"/bin/pip install uv\n'
+replacement = needle + '"${path_to_venv}"/bin/uv pip install setuptools wheel\n'
+install_needle = ('"${path_to_venv}"/bin/uv pip install '
+                  '"ryzen-ai>=1.7.0.dev0,<1.8.0.dev0"')
+install_replacement = ('"${path_to_venv}"/bin/uv pip install '
+                       '--no-build-isolation-package websockets '
+                       '"ryzen-ai>=1.7.0.dev0,<1.8.0.dev0"')
+if needle not in text or install_needle not in text:
+    raise SystemExit("unsupported Ryzen AI installer structure")
+text = text.replace(needle, replacement, 1)
+text = text.replace(install_needle, install_replacement, 1)
+path.write_text(text)
+PY
+chmod +x "$tmp/payload/install_ryzen_ai.sh"
+mkdir -p "$(dirname "$target")"
+
+if [[ "$as_json" != true ]]; then
+    echo "Installing AMD Ryzen AI ${VERSION} into $target"
+    echo "The proprietary payload and license remain outside the ISO."
+fi
+(
+    cd "$tmp/payload"
+    ./install_ryzen_ai.sh -a yes -n synapse-xdna -p "$target"
+)
+
+# AMD's compiler links the non-wide ncurses SONAME used on Ubuntu. Arch ships
+# the ABI-compatible wide library and linker script but not that runtime name.
+flexml_lib="$target/lib/python3.12/site-packages/flexml/flexml_extras/lib"
+ln -sfn /usr/lib/libncursesw.so.6 "$flexml_lib/libncurses.so.6"
+
+getent group "$LICENSE_GROUP" >/dev/null || groupadd --system "$LICENSE_GROUP"
+install -d -m750 -o root -g "$LICENSE_GROUP" "$(dirname "$PRIVATE_LICENSE")"
+install -m640 -o root -g "$LICENSE_GROUP" "$license_path" "$PRIVATE_LICENSE"
+grant_user="${SUDO_USER:-}"
+if [[ -z "$grant_user" || "$grant_user" == root ]]; then
+    grant_user="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $7 !~ /(nologin|false)$/ { print $1; exit }')"
+fi
+if [[ -n "$grant_user" ]]; then
+    usermod -aG "$LICENSE_GROUP" "$grant_user"
+fi
+install -d -m755 "$(dirname "$CONFIG_FILE")"
+cat > "$CONFIG_FILE" <<EOF
+RYZEN_AI_VERSION=${VERSION}
+RYZEN_AI_VENV=${target}
+XILINXD_LICENSE_FILE=${PRIVATE_LICENSE}
+XILINX_XRT=/usr
+SOURCE_SHA256=${actual_sha}
+EOF
+chmod 644 "$CONFIG_FILE"
+cat > "$PROFILE_FILE" <<EOF
+# Generated by synapse-xdna-import; contains paths only, not license data.
+export RYZEN_AI_VENV="${target}"
+export XILINXD_LICENSE_FILE="${PRIVATE_LICENSE}"
+export XILINX_XRT="/usr"
+EOF
+chmod 644 "$PROFILE_FILE"
+
+provider_json="$(bash -c 'source "$1/bin/activate" >/dev/null 2>&1; "$1/bin/python" -c "import json,onnxruntime as ort; print(json.dumps(ort.get_available_providers()))"' _ "$target")"
+grep -q 'VitisAIExecutionProvider' <<< "$provider_json" || {
+    echo "Installation completed but VitisAIExecutionProvider is unavailable: $provider_json" >&2
+    exit 7
+}
+
+quicktest_log=/var/log/synapse-xdna-onnx-quicktest.log
+if ! bash -c 'export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"; export XILINX_XRT=/usr; source "$1/bin/activate" >/dev/null 2>&1; exec "$1/bin/python" "$1/quicktest/quicktest.py"' _ "$target" >"$quicktest_log" 2>&1; then
+    echo "VitisAI ONNX quick test failed; see $quicktest_log" >&2
+    tail -40 "$quicktest_log" >&2
+    exit 8
+fi
+
+if [[ "$as_json" == true ]]; then
+    python - "$target" "$PRIVATE_LICENSE" "$actual_sha" "$provider_json" <<'PY'
+import json, sys
+root, license_path, digest, providers = sys.argv[1:]
+print(json.dumps({
+    "schema_version": 1,
+    "status": "installed",
+    "runtime_root": root,
+    "license_path": license_path,
+    "source_sha256": digest,
+    "providers": json.loads(providers),
+    "onnx_quicktest_passed": True,
+    "iso_payload_included": False,
+}, sort_keys=True, separators=(",", ":")))
+PY
+else
+    echo "Ryzen AI ${VERSION} installed successfully."
+    echo "VitisAI execution provider: available"
+    echo "VitisAI ONNX quick test: passed"
+    echo "Run: synapse-xdna doctor"
+fi

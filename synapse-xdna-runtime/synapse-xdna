@@ -12,6 +12,7 @@ import resource
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,7 @@ def available_onnx_providers() -> tuple[list[str], str | None]:
     if configured:
         candidates.append(Path(configured) / "bin/python")
     candidates.extend([
+        Path("/opt/synapse/xdna/ryzen-ai/1.7.1/bin/python"),
         Path("/opt/AMD/ryzenai/venv/bin/python"),
         Path("/opt/synapse/xdna/venv/bin/python"),
         Path(sys.executable),
@@ -52,10 +54,19 @@ def available_onnx_providers() -> tuple[list[str], str | None]:
         if python in seen or not python.is_file():
             continue
         seen.add(python)
-        probe = run([str(python), "-c", (
-            "import json,onnxruntime as ort;"
-            "print(json.dumps(ort.get_available_providers()))"
-        )])
+        venv_root = python.parent.parent
+        activate = venv_root / "bin/activate"
+        if activate.is_file() and "synapse/xdna" in str(venv_root):
+            probe = run(["bash", "-c", (
+                "source \"$1/bin/activate\" >/dev/null 2>&1; "
+                "exec \"$1/bin/python\" -c 'import json,onnxruntime as ort;"
+                "print(json.dumps(ort.get_available_providers()))'"
+            ), "_", str(venv_root)])
+        else:
+            probe = run([str(python), "-c", (
+                "import json,onnxruntime as ort;"
+                "print(json.dumps(ort.get_available_providers()))"
+            )])
         if probe.returncode == 0:
             try:
                 return json.loads(probe.stdout.strip().splitlines()[-1]), str(python)
@@ -197,6 +208,74 @@ def proof(device: str | None, test: str, as_json: bool) -> int:
     return 0 if proven else 1
 
 
+def onnx_proof(device: str | None, runtime_root: str, as_json: bool) -> int:
+    device = device or detect_device()
+    root = Path(runtime_root)
+    quicktest = root / "quicktest/quicktest.py"
+    if not device or not quicktest.is_file():
+        result = {"schema_version": 1, "status": "failed",
+                  "error": "XDNA device or Ryzen AI quicktest not found"}
+        json_print(result) if as_json else print(result["error"], file=sys.stderr)
+        return 1
+
+    script = (
+        'export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"; '
+        'export XILINX_XRT=/usr; '
+        'source "$1/bin/activate" >/dev/null 2>&1; '
+        'exec "$1/bin/python" "$1/quicktest/quicktest.py"'
+    )
+    started = time.monotonic()
+    samples = 0
+    active_samples = 0
+    first_active: str | None = None
+    with tempfile.TemporaryFile(mode="w+") as log:
+        inference = subprocess.Popen(["bash", "-c", script, "_", str(root)],
+                                     text=True, stdout=log,
+                                     stderr=subprocess.STDOUT)
+        while inference.poll() is None:
+            report = run(["xrt-smi", "examine", "-d", device,
+                          "-r", "aie-partitions", "--batch"], timeout=15)
+            samples += 1
+            if "|Active" in report.stdout:
+                active_samples += 1
+                if first_active is None:
+                    first_active = report.stdout
+        inference.wait()
+        log.seek(0)
+        output = log.read()
+    passed = inference.returncode == 0 and "Test Finished" in output
+    proven = passed and active_samples > 0
+    pid_match = re.search(r"\|\s*(\d+)\s*\|\s*\d+\s*\|", first_active or "")
+    columns_match = re.search(r"Columns:\s*\[([^]]+)\]", first_active or "")
+    result: dict[str, Any] = {
+        "schema_version": 1,
+        "status": "proven" if proven else "failed",
+        "backend": "onnxruntime-vitisai",
+        "provider": "VitisAIExecutionProvider",
+        "device": device,
+        "runtime_root": str(root),
+        "inference_passed": passed,
+        "active_context_observed": active_samples > 0,
+        "samples": samples,
+        "active_context_samples": active_samples,
+        "context_pid": int(pid_match.group(1)) if pid_match else None,
+        "aie_columns": columns_match.group(1) if columns_match else None,
+        "elapsed_seconds": round(time.monotonic() - started, 3),
+        "returncode": inference.returncode,
+    }
+    if as_json:
+        json_print(result)
+    else:
+        print(f"ONNX VitisAI NPU execution: {'PROVEN' if proven else 'FAILED'}")
+        print(f"  inference: {'passed' if passed else 'failed'}")
+        print(f"  active AIE context samples: {active_samples}/{samples}")
+        if result["aie_columns"]:
+            print(f"  AIE columns: [{result['aie_columns']}]")
+        if not passed:
+            print("\n".join(output.rstrip().splitlines()[-40:]), file=sys.stderr)
+    return 0 if proven else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="synapse-xdna")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -209,9 +288,17 @@ def main() -> int:
     proof_parser.add_argument("--test", choices=("gemm", "latency"), default="gemm")
     proof_parser.add_argument("--json", action="store_true")
 
+    onnx_parser = subparsers.add_parser("onnx-proof", help="run a VitisAI ONNX inference and observe an active AIE context")
+    onnx_parser.add_argument("--device", help="XDNA PCI BDF; auto-detected by default")
+    onnx_parser.add_argument("--runtime-root", default=os.environ.get(
+        "RYZEN_AI_VENV", "/opt/synapse/xdna/ryzen-ai/1.7.1"))
+    onnx_parser.add_argument("--json", action="store_true")
+
     args = parser.parse_args()
     if args.command == "doctor":
         return doctor(args.json)
+    if args.command == "onnx-proof":
+        return onnx_proof(args.device, args.runtime_root, args.json)
     return proof(args.device, args.test, args.json)
 
 

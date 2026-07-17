@@ -1,34 +1,37 @@
 # Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
 
 pkgname=synapse-xdna-runtime
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
-pkgdesc='AMD XDNA NPU runtime integration, validation payload, and proof tooling'
+pkgdesc='AMD XDNA NPU runtime integration, external SDK importer, validation, and proof tooling'
 arch=('x86_64')
 url='https://github.com/mgiustiniani/CachyOS-PKGBUILDS'
 license=('Apache-2.0')
-depends=('python' 'xrt' 'xrt-plugin-amdxdna')
+depends=('python' 'synapse-python312' 'xrt' 'xrt-plugin-amdxdna')
 options=('!strip')
 install=synapse-xdna-runtime.install
 _vtd_commit=c79b5d21568a4ffa5b0612a8279b352fc4e1109a
 source=(
   "xrt_smi_strx.a::https://github.com/Xilinx/VTD/raw/${_vtd_commit}/archive/strx/xrt_smi_strx.a"
   'synapse-xdna'
+  'synapse-xdna-import'
   '99-amdxdna.conf'
   'README.md'
 )
 noextract=('xrt_smi_strx.a')
 sha256sums=(
   '57384f0d5cf3fc604b00540ed9b7542826cd961c30a2f3207357c972cc3ef32c'
-  'c8fe61c7339e558b5c48ab5324f9d9bd63a2753340cce73336bfb68d267e0b45'
+  '96e942794a752c3e3c1d58d15337e1d9512eba316538832db09899159492982a'
+  'ddaaac16e8e3887581ffa3a2ae81f247493b766c3a0c4fff493a6514b64d814c'
   '25855b5063a1b8c17b520ca6fd87d53bb78308a6bbe877f50065de97437a7f7d'
-  'c621917e98b399f82fc412270fad7778157a4f24798d15b2a295a6906c7400a5'
+  '7588babe92aa7a7cba1d466c49d6f361341f8752fdacd8dc506292075084c5c8'
 )
 
 package() {
   install -Dm644 xrt_smi_strx.a \
     "$pkgdir/usr/share/xrt/amdxdna/bins/xrt_smi_strx.a"
   install -Dm755 synapse-xdna "$pkgdir/usr/bin/synapse-xdna"
+  install -Dm755 synapse-xdna-import "$pkgdir/usr/bin/synapse-xdna-import"
   install -Dm644 99-amdxdna.conf \
     "$pkgdir/etc/security/limits.d/99-amdxdna.conf"
   install -Dm644 README.md \

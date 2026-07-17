@@ -1,0 +1,54 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+# Based on the Arch User Repository python312 package maintained by GalaxySnail.
+
+pkgname=synapse-python312
+pkgver=3.12.13
+pkgrel=1
+_pybasever=3.12
+_pymajver=3
+pkgdesc='Python 3.12 compatibility runtime for AMD Ryzen AI Software'
+arch=('x86_64')
+license=('PSF-2.0')
+url='https://www.python.org/'
+provides=('python312')
+conflicts=('python312')
+depends=('bzip2' 'expat' 'gdbm' 'libffi' 'libnsl' 'libxcrypt' 'openssl' 'zlib')
+makedepends=('bluez-libs' 'mpdecimal' 'gdb' 'tk')
+optdepends=('sqlite' 'mpdecimal: decimal module' 'xz: lzma module' 'tk: tkinter')
+source=("https://www.python.org/ftp/python/${pkgver}/Python-${pkgver}.tar.xz")
+sha256sums=('c08bc65a81971c1dd5783182826503369466c7e67374d1646519adf05207b684')
+
+prepare() {
+  cd "Python-${pkgver}"
+  rm -rf Modules/expat Modules/_decimal/libmpdec
+  sed -i 's/\(LTOFLAGS=.*\) -flto-partition=none/\1/' configure
+}
+
+build() {
+  cd "Python-${pkgver}"
+  CFLAGS+=" -fno-semantic-interposition -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer"
+  ./configure ax_cv_c_float_words_bigendian=no \
+    --prefix=/usr \
+    --enable-shared \
+    --with-computed-gotos \
+    --with-lto \
+    --enable-ipv6 \
+    --with-system-expat \
+    --with-dbmliborder=gdbm:ndbm \
+    --with-system-libmpdec \
+    --enable-loadable-sqlite-extensions \
+    --without-ensurepip \
+    --with-tzpath=/usr/share/zoneinfo
+  make EXTRA_CFLAGS="$CFLAGS"
+}
+
+package() {
+  cd "Python-${pkgver}"
+  make DESTDIR="$pkgdir" altinstall maninstall
+  rm -rf "$pkgdir"/usr/lib/python*/{test,ctypes/test,distutils/tests,idlelib/idle_test,lib2to3/tests,tkinter/test,unittest/test}
+  rm -f "$pkgdir/usr/lib/libpython${_pymajver}.so"
+  rm -f "$pkgdir/usr/share/man/man1/python${_pymajver}.1"
+  sed -i "s|$srcdir/Python-${pkgver}:||" \
+    "$pkgdir/usr/lib/python${_pybasever}/config-${_pybasever}-${CARCH}-linux-gnu/Makefile"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
