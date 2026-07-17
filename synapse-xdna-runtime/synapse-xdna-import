@@ -9,10 +9,22 @@ VERSION="1.7.1"
 EXPECTED_RUNTIME_SHA256="d9dff0e95a09f06921fc7633e8dd8ec13949953c407f04340c07ad60eb362dc3"
 DEFAULT_TARGET="/opt/synapse/xdna/ryzen-ai/${VERSION}"
 PRIVATE_LICENSE="/var/lib/synapse-private/licenses/Xilinx.lic"
-LICENSE_GROUP="synapse-xdna"
 CONFIG_FILE="/etc/synapse/xdna-runtime.conf"
 PROFILE_FILE="/etc/profile.d/synapse-xdna.sh"
 CONTAINER_MEMBER="models/source/ryzen_ai-${VERSION}.tgz"
+AUTO_MEDIA="/run/synapse-xdna-import-media"
+tmp=""
+
+cleanup() {
+    if [[ -n "$tmp" && "${keep_staging:-false}" != true ]]; then
+        rm -rf "$tmp"
+    fi
+    if mountpoint -q "$AUTO_MEDIA" 2>/dev/null; then
+        umount "$AUTO_MEDIA" || true
+    fi
+    rmdir "$AUTO_MEDIA" 2>/dev/null || true
+}
+trap cleanup EXIT
 
 usage() {
     cat <<EOF
@@ -38,15 +50,36 @@ json_escape() {
 }
 
 find_runtime() {
-    local candidate
+    local candidate device label
     for candidate in \
         /mnt/models/runtime/amd/ryzen-ai/${VERSION}/ryzen_ai-${VERSION}.tgz \
         /run/media/*/*/runtime/amd/ryzen-ai/${VERSION}/ryzen_ai-${VERSION}.tgz \
         /run/media/*/*/models/runtime/amd/ryzen-ai/${VERSION}/ryzen_ai-${VERSION}.tgz \
         /run/media/*/*/archivi/linux_iso/cachyos/model_source.tar.gz \
-        /media/*/*/archivi/linux_iso/cachyos/model_source.tar.gz; do
+        /media/*/*/archivi/linux_iso/cachyos/model_source.tar.gz \
+        "$AUTO_MEDIA/runtime/amd/ryzen-ai/${VERSION}/ryzen_ai-${VERSION}.tgz" \
+        "$AUTO_MEDIA/models/runtime/amd/ryzen-ai/${VERSION}/ryzen_ai-${VERSION}.tgz" \
+        "$AUTO_MEDIA/archivi/linux_iso/cachyos/model_source.tar.gz"; do
         [[ -f "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
     done
+
+    # Calamares uses a private tmpfs for the target's /run, so desktop USB
+    # automounts are not visible from its chroot. When running as root, mount a
+    # known private-media label read-only and scan it directly.
+    if [[ $EUID -eq 0 ]] && command -v lsblk >/dev/null && command -v mount >/dev/null; then
+        while read -r device label; do
+            [[ "$label" == models || "$label" == T7 ]] || continue
+            mkdir -p "$AUTO_MEDIA"
+            mount -o ro "$device" "$AUTO_MEDIA" 2>/dev/null || continue
+            for candidate in \
+                "$AUTO_MEDIA/runtime/amd/ryzen-ai/${VERSION}/ryzen_ai-${VERSION}.tgz" \
+                "$AUTO_MEDIA/models/runtime/amd/ryzen-ai/${VERSION}/ryzen_ai-${VERSION}.tgz" \
+                "$AUTO_MEDIA/archivi/linux_iso/cachyos/model_source.tar.gz"; do
+                [[ -f "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+            done
+            umount "$AUTO_MEDIA"
+        done < <(lsblk -nrpo NAME,LABEL)
+    fi
     return 1
 }
 
@@ -64,7 +97,10 @@ find_license() {
         /run/media/*/*/runtime/amd/ryzen-ai/${VERSION}/Xilinx.lic \
         /run/media/*/*/models/runtime/amd/ryzen-ai/${VERSION}/Xilinx.lic \
         /run/media/*/*/archivi/linux_iso/cachyos/Xilinx.lic \
-        /media/*/*/archivi/linux_iso/cachyos/Xilinx.lic; do
+        /media/*/*/archivi/linux_iso/cachyos/Xilinx.lic \
+        "$AUTO_MEDIA/runtime/amd/ryzen-ai/${VERSION}/Xilinx.lic" \
+        "$AUTO_MEDIA/models/runtime/amd/ryzen-ai/${VERSION}/Xilinx.lic" \
+        "$AUTO_MEDIA/archivi/linux_iso/cachyos/Xilinx.lic"; do
         [[ -s "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
     done
     return 1
@@ -140,10 +176,6 @@ command -v python3.12 >/dev/null || { echo "python3.12 is required (install syna
 [[ ! -e "$target" ]] || { echo "Target already exists: $target" >&2; exit 5; }
 
 tmp="$(mktemp -d /var/tmp/synapse-xdna-import.XXXXXX)"
-cleanup() {
-    [[ "$keep_staging" == true ]] || rm -rf "$tmp"
-}
-trap cleanup EXIT
 payload="$tmp/ryzen_ai-${VERSION}.tgz"
 
 if [[ "$(basename "$source_path")" == "ryzen_ai-${VERSION}.tgz" ]]; then
@@ -198,16 +230,8 @@ fi
 flexml_lib="$target/lib/python3.12/site-packages/flexml/flexml_extras/lib"
 ln -sfn /usr/lib/libncursesw.so.6 "$flexml_lib/libncurses.so.6"
 
-getent group "$LICENSE_GROUP" >/dev/null || groupadd --system "$LICENSE_GROUP"
-install -d -m750 -o root -g "$LICENSE_GROUP" "$(dirname "$PRIVATE_LICENSE")"
-install -m640 -o root -g "$LICENSE_GROUP" "$license_path" "$PRIVATE_LICENSE"
-grant_user="${SUDO_USER:-}"
-if [[ -z "$grant_user" || "$grant_user" == root ]]; then
-    grant_user="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $7 !~ /(nologin|false)$/ { print $1; exit }')"
-fi
-if [[ -n "$grant_user" ]]; then
-    usermod -aG "$LICENSE_GROUP" "$grant_user"
-fi
+install -d -m700 -o root -g root "$(dirname "$PRIVATE_LICENSE")"
+install -m600 -o root -g root "$license_path" "$PRIVATE_LICENSE"
 install -d -m755 "$(dirname "$CONFIG_FILE")"
 cat > "$CONFIG_FILE" <<EOF
 RYZEN_AI_VERSION=${VERSION}

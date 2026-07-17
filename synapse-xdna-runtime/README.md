@@ -31,7 +31,9 @@ as proof of execution.
 AMD Ryzen AI Software 1.7.1 is account-gated and governed by AMD's EULA. Its
 archive and Xilinx license are never included in this package, the pacman
 repository, or the Synapse ISO. The importer discovers them on a separately
-mounted USB drive and installs them only into the target system:
+mounted USB drive, or mounts media labeled `models` or `T7` read-only when
+Calamares' target chroot cannot see desktop automounts, and installs them only
+into the target system:
 
 ```bash
 synapse-xdna-import discover
