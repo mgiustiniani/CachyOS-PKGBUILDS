@@ -2,11 +2,11 @@
 
 pkgname=synapse-whisperx-rocm
 pkgver=0.1.0
-pkgrel=2
+pkgrel=3
 pkgdesc='Optional WhisperX alignment and diarization for XDNA Whisper transcripts'
 arch=('x86_64')
 url='https://synapseos.it'
-license=('BSD-2-Clause' 'MIT')
+license=('BSD-2-Clause')
 backup=('etc/synapse/whisperx/config.conf')
 
 depends=(
@@ -60,7 +60,7 @@ source=(
 sha256sums=(
   'SKIP'
   '0ca2838c123522b50fa41eff16d1d0a83cc2b19fac2db6f4fe00e24764810d2f'
-  '4a449f996ef021bd112f845d45149e0b34111084bd1fc111ebaef0616cdd38ad'
+  'e9352642b9d94f5f70dfb8db5c5c8321850f639b7b589a9578b16322233dd210'
   'd640fb7c5cf714b558a9992f79340f4e97db6bc4b5d9c73d3f39fd343941d8f1'
   '0ffe8597aec1c9f78ff70167990980d2061c3fb52f7e2719d58788307f42fa1a'
 )
