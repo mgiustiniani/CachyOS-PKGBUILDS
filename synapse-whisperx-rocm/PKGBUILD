@@ -85,6 +85,9 @@ package() {
   install -dm755 "$appdir/synapse_whisperx" "$appdir/python"
   cp -a "$srcdir/python-vendor/." "$appdir/python/"
   cp -a "$srcdir/whisperx/whisperx" "$appdir/whisperx"
+  # Product model assets are acquired explicitly and remain outside packages/ISO.
+  rm -f "$appdir/whisperx/assets/pytorch_model.bin"
+  rm -f "$appdir/python/torchmetrics/functional/image/dists_models/weights.pt"
   find "$appdir" -type d -name '__pycache__' -prune -exec rm -rf {} +
 
   install -Dm644 "$startdir/synapse_whisperx/cli.py" "$appdir/synapse_whisperx/cli.py"
