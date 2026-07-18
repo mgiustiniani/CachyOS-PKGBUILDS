@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -144,6 +145,10 @@ def build_parser() -> argparse.ArgumentParser:
     worker.add_argument("--wait", action="store_true", help="Keep polling after the queue becomes empty")
     worker.add_argument("--poll-seconds", type=float, default=2.0)
     worker.add_argument("--max-jobs", type=int, default=0, help="Maximum attempts before exit; zero is unlimited")
+    credential_set = subparsers.add_parser("credential-set-huggingface", help="Encrypt a Hugging Face token for the system worker")
+    credential_set.add_argument("--file", help="Read the token from this protected file instead of stdin")
+    subparsers.add_parser("credential-status", help="Report system worker credential configuration")
+    subparsers.add_parser("credential-remove-huggingface", help="Remove the encrypted Hugging Face worker token")
 
     resolve = subparsers.add_parser("resolve", help="Resolve activated component paths")
     resolve.add_argument("model")
@@ -155,6 +160,104 @@ def require_manifest(registry: dict[str, Manifest], model_id: str) -> Manifest:
         return registry[model_id]
     except KeyError as exc:
         raise ManifestError(f"unknown model bundle: {model_id}") from exc
+
+
+def _credential_paths() -> tuple[Path, Path]:
+    root = Path(os.environ.get("SYNAPSE_MODEL_CREDENTIAL_ROOT", "/var/lib/synapse-private/credentials"))
+    dropin = Path(os.environ.get(
+        "SYNAPSE_MODEL_CREDENTIAL_DROPIN",
+        "/etc/systemd/system/synapse-model-worker.service.d/credentials.conf",
+    ))
+    return root / "hf-token.cred", dropin
+
+
+def _require_credential_privileges() -> None:
+    if "SYNAPSE_MODEL_CREDENTIAL_ROOT" not in os.environ and os.geteuid() != 0:
+        raise ModelManagerError("system Hugging Face credentials must be managed as root")
+
+
+def _reload_systemd() -> bool:
+    if shutil.which("systemctl") is None:
+        return False
+    result = subprocess.run(
+        ["systemctl", "daemon-reload"], check=False,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def _set_huggingface_credential(source_file: str | None) -> dict[str, Any]:
+    _require_credential_privileges()
+    encrypted, dropin = _credential_paths()
+    if shutil.which("systemd-creds") is None:
+        raise ModelManagerError("systemd-creds is required to encrypt worker credentials")
+    token = Path(source_file).read_bytes() if source_file else sys.stdin.buffer.read()
+    token = token.strip()
+    if not token or len(token) > 4096 or any(character in token for character in b"\x00\r\n\t "):
+        raise ManifestError("the Hugging Face token must be one non-empty whitespace-free value")
+    encrypted.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(prefix="hf-token.", suffix=".cred", dir=encrypted.parent)
+    os.close(fd)
+    os.unlink(temporary_name)
+    try:
+        result = subprocess.run(
+            ["systemd-creds", "encrypt", "--name=hf-token", "-", temporary_name],
+            input=token,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode:
+            message = result.stderr.decode("utf-8", errors="replace").strip()
+            raise ModelManagerError(f"systemd credential encryption failed: {message}")
+        os.chmod(temporary_name, 0o600)
+        os.replace(temporary_name, encrypted)
+    finally:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+    dropin.parent.mkdir(parents=True, exist_ok=True)
+    content = (
+        "[Service]\n"
+        f"LoadCredentialEncrypted=hf-token:{encrypted}\n"
+    )
+    fd, dropin_temporary = tempfile.mkstemp(prefix="credentials.", suffix=".conf", dir=dropin.parent)
+    try:
+        os.fchmod(fd, 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(dropin_temporary, dropin)
+    finally:
+        try:
+            os.unlink(dropin_temporary)
+        except FileNotFoundError:
+            pass
+    reloaded = _reload_systemd()
+    return {"credential": "huggingface", "configured": True, "encrypted": True, "path": str(encrypted), "systemdReloaded": reloaded}
+
+
+def _credential_status() -> dict[str, Any]:
+    encrypted, dropin = _credential_paths()
+    return {
+        "credentials": [{
+            "id": "huggingface",
+            "configured": encrypted.is_file() and dropin.is_file(),
+            "encrypted": encrypted.is_file(),
+            "path": str(encrypted),
+        }]
+    }
+
+
+def _remove_huggingface_credential() -> dict[str, Any]:
+    _require_credential_privileges()
+    encrypted, dropin = _credential_paths()
+    encrypted.unlink(missing_ok=True)
+    dropin.unlink(missing_ok=True)
+    reloaded = _reload_systemd()
+    return {"credential": "huggingface", "configured": False, "removed": True, "systemdReloaded": reloaded}
 
 
 def _source_configuration(value: str) -> tuple[str, Path | None]:
@@ -358,6 +461,12 @@ def run_command(args: argparse.Namespace, registry: dict[str, Manifest], output:
             poll_seconds=args.poll_seconds,
             max_jobs=args.max_jobs,
         )
+    if args.command == "credential-set-huggingface":
+        return _set_huggingface_credential(args.file)
+    if args.command == "credential-status":
+        return _credential_status()
+    if args.command == "credential-remove-huggingface":
+        return _remove_huggingface_credential()
     if args.command == "resume":
         manifest = require_manifest(registry, args.model)
         jobs = list_jobs(state_dir, args.model)

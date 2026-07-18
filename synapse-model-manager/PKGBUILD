@@ -1,7 +1,7 @@
 # Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
 
 pkgname=synapse-model-manager
-pkgver=0.3.0
+pkgver=0.4.0
 pkgrel=1
 pkgdesc='Shared external AI model discovery, acquisition, verification, and activation for Synapse Linux'
 arch=('any')
@@ -9,6 +9,7 @@ url='https://synapseos.it'
 license=('MIT')
 install='synapse-model-manager.install'
 depends=(
+  'aria2'
   'python'
   'python-huggingface-hub'
   'systemd'
@@ -30,6 +31,8 @@ package() {
   install -Dm644 "$startdir/synapse_model_manager/cli.py" \
     "$pkgdir/usr/lib/synapse-model-manager/synapse_model_manager/cli.py"
   install -Dm755 "$startdir/synapse-model" "$pkgdir/usr/bin/synapse-model"
+  install -Dm755 "$startdir/synapse-model-worker" \
+    "$pkgdir/usr/lib/synapse-model-manager/synapse-model-worker"
   install -Dm644 "$startdir/synapse-model-worker.service" \
     "$pkgdir/usr/lib/systemd/system/synapse-model-worker.service"
   install -Dm644 "$startdir/synapse-model-worker.path" \

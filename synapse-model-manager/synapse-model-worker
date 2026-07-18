@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+set -euo pipefail
+credential=${CREDENTIALS_DIRECTORY:-}/hf-token
+if [[ -n ${CREDENTIALS_DIRECTORY:-} && -r $credential ]]; then
+    HF_TOKEN=$(<"$credential")
+    export HF_TOKEN
+fi
+export HF_HUB_DISABLE_TELEMETRY=1
+exec /usr/bin/synapse-model worker --jsonl

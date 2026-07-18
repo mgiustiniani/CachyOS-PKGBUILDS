@@ -4,12 +4,15 @@ import fcntl
 import hashlib
 import json
 import os
+import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass, field
@@ -78,9 +81,13 @@ class RequiredFile:
 @dataclass(frozen=True)
 class HttpFile:
     path: str
-    url: str
+    urls: tuple[str, ...]
     size: int | None = None
     sha256: str | None = None
+
+    @property
+    def url(self) -> str:
+        return self.urls[0]
 
 
 @dataclass(frozen=True)
@@ -367,15 +374,22 @@ def load_manifest(path: Path) -> Manifest:
             )
             for entry in item.get("required", [])
         )
-        http_files = tuple(
-            HttpFile(
-                path=_safe_relative(str(entry.get("path", "")), "http_files.path"),
-                url=str(entry.get("url", "")),
-                size=int(entry["size"]) if "size" in entry else None,
-                sha256=str(entry["sha256"]).lower() if entry.get("sha256") else None,
+        http_files_list: list[HttpFile] = []
+        for entry in item.get("http_files", []):
+            raw_urls = entry.get("urls")
+            if raw_urls is None:
+                raw_urls = [entry.get("url", "")]
+            if not isinstance(raw_urls, list) or not raw_urls or any(not str(value) for value in raw_urls):
+                raise ManifestError(f"http_files entry has no URL mirrors in {path}")
+            http_files_list.append(
+                HttpFile(
+                    path=_safe_relative(str(entry.get("path", "")), "http_files.path"),
+                    urls=tuple(str(value) for value in raw_urls),
+                    size=int(entry["size"]) if "size" in entry else None,
+                    sha256=str(entry["sha256"]).lower() if entry.get("sha256") else None,
+                )
             )
-            for entry in item.get("http_files", [])
-        )
+        http_files = tuple(http_files_list)
         source_type = str(item.get("source_type", "huggingface"))
         if source_type not in {"huggingface", "http-files", "external-only"}:
             raise ManifestError(f"unsupported source_type {source_type!r} in {path}")
@@ -579,6 +593,28 @@ def find_complete_source(
 Control = Callable[[], None]
 
 
+def _hf_subprocess_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    if environment.get("HF_TOKEN"):
+        return environment
+    credential = Path(environment.get(
+        "SYNAPSE_MODEL_HF_CREDENTIAL",
+        "/var/lib/synapse-private/credentials/hf-token.cred",
+    ))
+    if not credential.is_file() or shutil.which("systemd-creds") is None:
+        return environment
+    result = subprocess.run(
+        ["systemd-creds", "decrypt", "--name=hf-token", str(credential), "-"],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=sys.stderr,
+    )
+    token = result.stdout.strip() if result.returncode == 0 else b""
+    if token:
+        environment["HF_TOKEN"] = token.decode("utf-8")
+    return environment
+
+
 def _run_hf_download(component: Component, target: Path, emitter: Emitter, control: Control) -> None:
     if shutil.which("hf") is None:
         raise AcquisitionError("the hf CLI from python-huggingface-hub is required")
@@ -590,7 +626,9 @@ def _run_hf_download(component: Component, target: Path, emitter: Emitter, contr
         command.extend(["--include", pattern])
     command.extend(["--local-dir", str(target)])
     emitter("download-started", {"component": component.id, "repo": component.repo, "revision": component.revision})
-    process = subprocess.Popen(command, stdout=sys.stderr, stderr=sys.stderr)
+    process = subprocess.Popen(
+        command, stdout=sys.stderr, stderr=sys.stderr, env=_hf_subprocess_environment(),
+    )
     try:
         while process.poll() is None:
             control()
@@ -622,16 +660,26 @@ def _progress_details(path: Path, completed: int, total: int | None, started: fl
     }
 
 
-def _download_http_file(item: HttpFile, target: Path, emitter: Emitter, control: Control) -> None:
+def _prepare_http_destination(item: HttpFile, target: Path, emitter: Emitter) -> tuple[Path, Path] | None:
     destination = target / item.path
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_name(destination.name + ".part")
     if destination.is_file() and (item.size is None or destination.stat().st_size == item.size):
         if item.sha256 is None or sha256_file(destination) == item.sha256:
             emitter("download-skipped", {"path": str(destination), "reason": "complete"})
-            return
+            return None
         destination.unlink()
         emitter("download-restarted", {"path": str(destination), "reason": "checksum-mismatch"})
+    return destination, partial
+
+
+def _download_http_file_python(
+    item: HttpFile,
+    destination: Path,
+    partial: Path,
+    emitter: Emitter,
+    control: Control,
+) -> None:
     if partial.is_file() and item.size is not None and partial.stat().st_size > item.size:
         partial.unlink()
     offset = partial.stat().st_size if partial.is_file() else 0
@@ -643,7 +691,10 @@ def _download_http_file(item: HttpFile, target: Path, emitter: Emitter, control:
     if offset:
         headers["Range"] = f"bytes={offset}-"
     request = urllib.request.Request(item.url, headers=headers)
-    emitter("download-started", {"path": str(destination), "url": item.url, "resumeOffsetBytes": offset})
+    emitter("download-started", {
+        "path": str(destination), "url": item.url, "mirrorCount": len(item.urls),
+        "resumeOffsetBytes": offset, "transport": "python-http",
+    })
     try:
         response = urllib.request.urlopen(request, timeout=120)
     except urllib.error.HTTPError as exc:
@@ -691,7 +742,194 @@ def _download_http_file(item: HttpFile, target: Path, emitter: Emitter, control:
     if item.size is not None and completed != item.size:
         raise AcquisitionError(f"download size mismatch for {item.url}: expected {item.size}, received {completed}")
     partial.replace(destination)
-    emitter("download-completed", {"path": str(destination), "completedBytes": completed})
+    emitter("download-completed", {"path": str(destination), "completedBytes": completed, "transport": "python-http"})
+
+
+def _allocate_loopback_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as stream:
+        stream.bind(("127.0.0.1", 0))
+        return int(stream.getsockname()[1])
+
+
+def _aria2_rpc(port: int, secret: str, method: str, parameters: list[Any]) -> Any | None:
+    payload = json.dumps({
+        "jsonrpc": "2.0",
+        "id": "synapse-model",
+        "method": method,
+        "params": [f"token:{secret}", *parameters],
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/jsonrpc",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=1) as response:
+            value = json.load(response)
+    except (OSError, ValueError):
+        return None
+    return value.get("result")
+
+
+def _aria2_progress(port: int, secret: str) -> tuple[int, int | None, int] | None:
+    active = _aria2_rpc(
+        port,
+        secret,
+        "aria2.tellActive",
+        [["completedLength", "totalLength", "downloadSpeed"]],
+    )
+    if not active:
+        return None
+    completed = sum(int(item.get("completedLength", 0)) for item in active)
+    totals = [int(item.get("totalLength", 0)) for item in active]
+    speed = sum(int(item.get("downloadSpeed", 0)) for item in active)
+    return completed, sum(totals) if totals and all(totals) else None, speed
+
+
+def _aria2_completed_and_shutdown(port: int, secret: str) -> bool:
+    stopped = _aria2_rpc(port, secret, "aria2.tellStopped", [-1, 1, ["status", "errorCode"]])
+    if not stopped or not any(item.get("status") == "complete" for item in stopped):
+        return False
+    _aria2_rpc(port, secret, "aria2.shutdown", [])
+    return True
+
+
+def _download_http_file_aria2(
+    item: HttpFile,
+    destination: Path,
+    partial: Path,
+    emitter: Emitter,
+    control: Control,
+) -> None:
+    if shutil.which("aria2c") is None:
+        raise AcquisitionError("aria2c is required by the configured HTTP transport")
+    if any(any(character.isspace() for character in url) for url in item.urls):
+        raise ManifestError(f"aria2 mirror URLs must not contain whitespace: {item.path}")
+    control_file = partial.with_name(partial.name + ".aria2")
+    if partial.is_file() and item.size is not None and partial.stat().st_size > item.size:
+        partial.unlink()
+        control_file.unlink(missing_ok=True)
+    partial_size = partial.stat().st_size if partial.is_file() else 0
+    if item.size is not None and partial_size == item.size and not control_file.exists():
+        partial.replace(destination)
+        emitter("download-resumed", {"path": str(destination), "completedBytes": partial_size, "totalBytes": item.size, "transport": "aria2"})
+        return
+    fd, input_name = tempfile.mkstemp(prefix="synapse-aria2-", suffix=".txt", dir=destination.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write("\t".join(item.urls) + "\n")
+            stream.write(f"  dir={destination.parent}\n")
+            stream.write(f"  out={partial.name}\n")
+        rpc_port = _allocate_loopback_port()
+        rpc_secret = secrets.token_urlsafe(24)
+        command = [
+            "aria2c",
+            f"--input-file={input_name}",
+            "--continue=true",
+            "--allow-overwrite=true",
+            "--auto-file-renaming=false",
+            "--file-allocation=none",
+            "--max-connection-per-server=4",
+            "--split=4",
+            "--min-split-size=64M",
+            "--max-tries=8",
+            "--retry-wait=3",
+            "--connect-timeout=30",
+            "--timeout=120",
+            "--lowest-speed-limit=1K",
+            "--check-certificate=true",
+            "--show-console-readout=false",
+            "--summary-interval=0",
+            "--console-log-level=warn",
+            "--download-result=hide",
+            "--enable-rpc=true",
+            "--rpc-listen-all=false",
+            f"--rpc-listen-port={rpc_port}",
+            f"--rpc-secret={rpc_secret}",
+        ]
+        emitter("download-started", {
+            "path": str(destination), "url": item.url, "mirrorCount": len(item.urls),
+            "resumeOffsetBytes": None if control_file.exists() else partial_size,
+            "partialSizeBytes": partial_size, "transport": "aria2",
+        })
+        started = time.monotonic()
+        last_event = started
+        process = subprocess.Popen(command, stdout=sys.stderr, stderr=sys.stderr)
+        try:
+            while process.poll() is None:
+                control()
+                now = time.monotonic()
+                if now - last_event >= 1.0:
+                    progress = _aria2_progress(rpc_port, rpc_secret)
+                    if progress:
+                        completed, reported_total, rate = progress
+                        total = item.size or reported_total
+                        remaining = max(total - completed, 0) if total is not None else None
+                        emitter("download-progress", {
+                            "path": str(destination), "completedBytes": completed, "totalBytes": total,
+                            "bytesPerSecond": rate,
+                            "etaSeconds": int(remaining / rate) if remaining is not None and rate > 0 else None,
+                            "transport": "aria2",
+                        })
+                    elif _aria2_completed_and_shutdown(rpc_port, rpc_secret):
+                        emitter("download-transport-finished", {"path": str(destination), "transport": "aria2"})
+                    last_event = now
+                time.sleep(0.25)
+        except (JobCancelledError, JobPausedError, KeyboardInterrupt):
+            process.send_signal(2)
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            raise
+        if process.returncode:
+            raise AcquisitionError(f"aria2 download failed for {item.url} with exit code {process.returncode}")
+    finally:
+        try:
+            os.unlink(input_name)
+        except FileNotFoundError:
+            pass
+    completed = partial.stat().st_size if partial.is_file() else 0
+    emitter("download-progress", {
+        **_progress_details(destination, completed, item.size, started), "transport": "aria2",
+    })
+    if control_file.exists():
+        raise AcquisitionError(f"aria2 left an incomplete control file for {item.url}")
+    if item.size is not None and completed != item.size:
+        raise AcquisitionError(f"download size mismatch for {item.url}: expected {item.size}, received {completed}")
+    partial.replace(destination)
+    emitter("download-completed", {"path": str(destination), "completedBytes": completed, "transport": "aria2"})
+
+
+def _download_http_file(item: HttpFile, target: Path, emitter: Emitter, control: Control) -> None:
+    prepared = _prepare_http_destination(item, target, emitter)
+    if prepared is None:
+        return
+    destination, partial = prepared
+    configured = os.environ.get("SYNAPSE_MODEL_HTTP_TRANSPORT", "auto").lower()
+    if configured not in {"auto", "aria2", "python"}:
+        raise ManifestError(f"unsupported SYNAPSE_MODEL_HTTP_TRANSPORT: {configured}")
+    schemes = {urllib.parse.urlparse(url).scheme.lower() for url in item.urls}
+    use_aria2 = configured == "aria2" or (configured == "auto" and shutil.which("aria2c") is not None and schemes <= {"http", "https"})
+    if use_aria2:
+        _download_http_file_aria2(item, destination, partial, emitter, control)
+    else:
+        errors: list[str] = []
+        for url in item.urls:
+            selected = HttpFile(path=item.path, urls=(url,), size=item.size, sha256=item.sha256)
+            try:
+                _download_http_file_python(selected, destination, partial, emitter, control)
+                return
+            except AcquisitionError as exc:
+                errors.append(str(exc))
+                emitter("mirror-failed", {"path": str(destination), "url": url, "error": str(exc)})
+        raise AcquisitionError(f"all HTTP mirrors failed for {item.path}: {'; '.join(errors)}")
 
 
 def acquire_web(manifest: Manifest, staging_root: Path, emitter: Emitter, control: Control) -> None:
@@ -728,26 +966,61 @@ def _copy_file_resumable(
     if offset > source_size:
         partial.unlink()
         offset = 0
+    control()
+    if offset == 0 and not partial.exists():
+        try:
+            with source.open("rb", buffering=0) as input_stream, partial.open("wb", buffering=0) as output:
+                fcntl.ioctl(output.fileno(), 0x40049409, input_stream.fileno())  # Linux FICLONE
+                os.fsync(output.fileno())
+            shutil.copystat(source, partial)
+            partial.replace(destination)
+            emitter("copy-completed-file", {
+                "path": str(destination), "completedBytes": source_size, "transport": "reflink",
+            })
+            return
+        except OSError:
+            partial.unlink(missing_ok=True)
     started = time.monotonic()
     last_event = started
-    with source.open("rb") as input_stream, partial.open("ab" if offset else "wb") as output:
+    transport = "copy-file-range"
+    use_copy_range = hasattr(os, "copy_file_range")
+    partial.touch(exist_ok=True)
+    with source.open("rb", buffering=0) as input_stream, partial.open("r+b", buffering=0) as output:
         input_stream.seek(offset)
+        output.seek(offset)
         completed = offset
         while True:
             control()
-            block = input_stream.read(8 * 1024 * 1024)
-            if not block:
-                break
-            output.write(block)
-            completed += len(block)
+            if use_copy_range:
+                try:
+                    copied = os.copy_file_range(input_stream.fileno(), output.fileno(), 8 * 1024 * 1024)
+                except OSError:
+                    use_copy_range = False
+                    transport = "buffered-copy"
+                    continue
+                if copied == 0:
+                    break
+                completed += copied
+            else:
+                block = input_stream.read(8 * 1024 * 1024)
+                if not block:
+                    break
+                output.write(block)
+                completed += len(block)
             now = time.monotonic()
             if now - last_event >= 1.0:
-                emitter("copy-progress", _progress_details(destination, completed, source_size, started))
+                details = _progress_details(destination, completed, source_size, started)
+                details["transport"] = transport
+                emitter("copy-progress", details)
                 last_event = now
-        output.flush()
         os.fsync(output.fileno())
+    if completed != source_size:
+        raise AcquisitionError(f"copy size mismatch for {source}: expected {source_size}, copied {completed}")
     shutil.copystat(source, partial)
     partial.replace(destination)
+    emitter("copy-completed-file", {
+        "path": str(destination), "completedBytes": completed, "transport": transport,
+    })
 
 
 def _copy_component(source: Path, destination: Path, emitter: Emitter, component: Component, control: Control) -> None:

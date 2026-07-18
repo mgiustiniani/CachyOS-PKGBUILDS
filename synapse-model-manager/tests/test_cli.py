@@ -118,6 +118,28 @@ http_files = [
 ''',
             encoding="utf-8",
         )
+        (self.manifests / "mirror-fixture.toml").write_text(
+            f'''schema_version = 1
+id = "mirror-fixture"
+name = "Mirror Fixture"
+description = "HTTP mirror fallback test"
+product = "tests"
+default_root = "{self.destination}"
+license = "MIT"
+
+[[components]]
+id = "mirror-model"
+relative_path = "gguf/test/mirror"
+source_type = "http-files"
+required = [
+  {{ path = "model.bin", size = {web_source.stat().st_size}, sha256 = "{web_hash}" }},
+]
+http_files = [
+  {{ path = "model.bin", urls = ["http://127.0.0.1:1/unavailable", "{web_source.as_uri()}"], size = {web_source.stat().st_size}, sha256 = "{web_hash}" }},
+]
+''',
+            encoding="utf-8",
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -137,6 +159,7 @@ http_files = [
     def run_cli(self, *arguments: str, expected: int = 0) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(PROJECT)
+        env["SYNAPSE_MODEL_HTTP_TRANSPORT"] = "python"
         result = subprocess.run(
             self.cli_command(*arguments),
             cwd=PROJECT,
@@ -193,6 +216,11 @@ http_files = [
         )
         events = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual(events[-1]["event"], "result")
+        completed = [
+            entry for entry in events
+            if entry["event"] == "copy-completed-file" and entry["path"].endswith("weights.bin")
+        ]
+        self.assertIn(completed[0]["transport"], {"copy-file-range", "buffered-copy"})
         self.assertEqual(
             (self.destination / "safetensors/test/model/weights.bin").read_bytes(),
             b"synapse-model-fixture\n",
@@ -316,6 +344,7 @@ http_files = [
             )
             env = os.environ.copy()
             env["PYTHONPATH"] = str(PROJECT)
+            env["SYNAPSE_MODEL_HTTP_TRANSPORT"] = "python"
             process = subprocess.Popen(
                 self.cli_command(
                     "install", "cancel-fixture", "--source", "web", "--mode", "copy",
@@ -420,6 +449,19 @@ http_files = [
         self.assertTrue(removed["data"]["partialsRemoved"])
         self.assertFalse(staging.exists())
         self.assertEqual(json.loads(self.run_cli("jobs", "web-fixture", "--json").stdout)["data"]["jobs"], [])
+
+    def test_python_http_transport_falls_back_to_second_mirror(self) -> None:
+        result = self.run_cli(
+            "install", "mirror-fixture", "--source", "web", "--mode", "copy",
+            "--root", str(self.destination), "--jsonl",
+        )
+        events = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertIn("mirror-failed", [entry["event"] for entry in events])
+        self.assertTrue(events[-1]["ok"])
+        self.assertEqual(
+            (self.destination / "gguf/test/mirror/model.bin").read_bytes(),
+            b"web-model-fixture\n",
+        )
 
     def test_jsonl_emits_events_and_final_result(self) -> None:
         result = self.run_cli(

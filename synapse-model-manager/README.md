@@ -28,7 +28,7 @@ Sources accepted by `install` are `auto`, `usb`, `web`, or an explicit archive r
 
 Copy and web installations use a deterministic staging directory under the destination filesystem. Failed, paused, cancelled, or interrupted transfers preserve verified partial data. Running the same `install` command again, or using `resume MODEL`, continues that job. Use `--restart` only when partial data should be discarded.
 
-HTTP sources resume through validated Range requests. Hugging Face sources reuse the official `hf download` local cache and Xet transfer implementation. USB copies use `.part` files and continue from the existing byte offset. A disk-space preflight runs before acquisition.
+HTTP/HTTPS sources use aria2 with segmented transfer, persistent control files, mirror failover, and manager-owned byte progress. Set `SYNAPSE_MODEL_HTTP_TRANSPORT=python` only for the built-in sequential fallback. Hugging Face sources reuse the official `hf download` local cache and Xet transfer implementation. USB copies first attempt a same-filesystem reflink, then kernel `copy_file_range`, and finally a buffered resumable `.part` copy. A disk-space preflight runs before acquisition.
 
 Jobs are stored atomically under `/var/lib/synapse/model-manager/jobs`. `pause` and `cancel` are cooperative: the running transfer observes the request at its next I/O boundary and exits while retaining partial data.
 
@@ -43,6 +43,18 @@ sudo systemctl enable --now synapse-model-worker.path synapse-model-worker.servi
 ```
 
 The service runs as root because system model destinations are protected. Its systemd sandbox limits writable locations to `/var/lib/synapse`, `/mnt`, `/media`, and `/run/media`. Queue records never contain Hugging Face tokens. A future desktop frontend should enqueue through a narrow polkit action instead of changing queue-directory permissions.
+
+## Protected Hugging Face credentials
+
+Store an optional token as a host-encrypted systemd credential without placing it in shell arguments, configuration, job JSON, or package files:
+
+```sh
+printf '%s' "$HF_TOKEN" | sudo synapse-model credential-set-huggingface
+sudo synapse-model credential-status
+sudo synapse-model credential-remove-huggingface
+```
+
+The encrypted blob is stored at `/var/lib/synapse-private/credentials/hf-token.cred`. A generated systemd drop-in exposes the decrypted value only inside the worker's credentials directory. Synchronous root downloads can decrypt the same blob directly into the child `hf` process environment.
 
 Modes:
 
@@ -83,7 +95,7 @@ Product packages can install TOML manifests into:
 /usr/share/synapse/models.d
 ```
 
-Additional registries can be selected with `--manifest-dir` or the colon-separated `SYNAPSE_MODEL_MANIFEST_DIRS` environment variable. Manifests pin repositories and revisions, describe required files and globs, and may bind exact sizes and SHA-256 hashes.
+Additional registries can be selected with `--manifest-dir` or the colon-separated `SYNAPSE_MODEL_MANIFEST_DIRS` environment variable. Manifests pin repositories and revisions, describe required files and globs, and may bind exact sizes and SHA-256 hashes. HTTP files accept either a legacy `url` or an ordered `urls = [...]` mirror list; aria2 treats all entries as sources for the same verified output.
 
 The initial registry covers:
 
