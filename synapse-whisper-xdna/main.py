@@ -165,7 +165,13 @@ def convert_audio(source: Path, destination: Path) -> None:
         raise RuntimeError(result.stderr.strip() or "ffmpeg conversion failed")
 
 
-def load_chunks(path: Path) -> list[np.ndarray]:
+def load_chunks(
+    path: Path, chunk_seconds: float, overlap_seconds: float,
+) -> list[tuple[float, np.ndarray]]:
+    if not 1.0 <= chunk_seconds <= 30.0:
+        raise ValueError("chunk seconds must be between 1 and 30")
+    if not 0.0 <= overlap_seconds < chunk_seconds:
+        raise ValueError("overlap seconds must be non-negative and smaller than the chunk")
     with wave.open(str(path), "rb") as stream:
         if stream.getnchannels() != 1 or stream.getframerate() != 16000 or stream.getsampwidth() != 2:
             raise RuntimeError("converted audio is not mono 16 kHz PCM16")
@@ -173,13 +179,94 @@ def load_chunks(path: Path) -> list[np.ndarray]:
     audio /= 32768.0
     if not len(audio):
         raise RuntimeError("audio input is empty")
-    window = 30 * 16000
-    return [audio[offset:offset + window] for offset in range(0, len(audio), window)]
+    window = round(chunk_seconds * 16000)
+    step = round((chunk_seconds - overlap_seconds) * 16000)
+    chunks: list[tuple[float, np.ndarray]] = []
+    offset = 0
+    while True:
+        chunks.append((offset / 16000.0, audio[offset:offset + window]))
+        if offset + window >= len(audio):
+            break
+        candidate = offset + step
+        if candidate + window >= len(audio):
+            candidate = max(0, len(audio) - window)
+        if candidate <= offset:
+            break
+        offset = candidate
+    return chunks
 
 
 def normalize_language(value: str) -> str:
     normalized = value.strip().lower().replace("_", "-").split("-", 1)[0]
-    return LANGUAGES.get(normalized, value)
+    return LANGUAGES.get(normalized, normalized)
+
+
+def detect_language(
+    encoded: np.ndarray, tokenizer: Any, decoder: ort.InferenceSession,
+) -> tuple[str, float]:
+    start = tokenizer.convert_tokens_to_ids("<|startoftranscript|>")
+    pad = tokenizer.pad_token_id
+    values = np.full((1, 448), pad, dtype=np.int64)
+    values[0, 0] = start
+    started = time.perf_counter()
+    logits = decoder.run(None, {"x": values, "xa": encoded})[0][0, 0]
+    elapsed = time.perf_counter() - started
+    language_ids = [
+        token_id for marker, token_id in tokenizer.get_vocab().items()
+        if marker.startswith("<|") and marker.endswith("|>")
+        and len(marker[2:-2]) in (2, 3) and marker[2:-2].isalpha()
+    ]
+    if not language_ids:
+        raise RuntimeError("processor tokenizer exposes no Whisper language tokens")
+    token = language_ids[int(np.argmax(logits[language_ids]))]
+    marker = tokenizer.convert_ids_to_tokens(token)
+    if not marker.startswith("<|") or not marker.endswith("|>"):
+        raise RuntimeError(f"decoder returned invalid language token: {marker}")
+    return marker[2:-2], elapsed
+
+
+def merge_text(previous: str, current: str) -> str:
+    if not previous:
+        return current.strip()
+    if not current:
+        return previous.strip()
+    left = previous.split()
+    right = current.split()
+    maximum = min(30, len(left), len(right))
+    overlap = 0
+    for size in range(maximum, 0, -1):
+        if [word.casefold() for word in left[-size:]] == [word.casefold() for word in right[:size]]:
+            overlap = size
+            break
+    return " ".join([*left, *right[overlap:]]).strip()
+
+
+def append_segments(
+    destination: list[dict[str, Any]], incoming: list[dict[str, Any]],
+    base_time: float, previous_end: float,
+) -> None:
+    overlap = max(0.0, previous_end - base_time)
+    ownership_boundary = base_time + overlap / 2.0
+    if overlap:
+        destination[:] = [
+            item for item in destination
+            if (item["start"] + item["end"]) / 2.0 <= ownership_boundary
+        ]
+    for segment in incoming:
+        absolute = {
+            "start": segment["start"] + base_time,
+            "end": segment["end"] + base_time,
+            "text": segment["text"],
+        }
+        if overlap and (absolute["start"] + absolute["end"]) / 2.0 < ownership_boundary:
+            continue
+        duplicate = any(
+            item["text"].casefold() == absolute["text"].casefold()
+            and abs(item["start"] - absolute["start"]) <= overlap + 0.5
+            for item in destination[-3:]
+        )
+        if not duplicate:
+            destination.append(absolute)
 
 
 def decode_chunk(
@@ -190,7 +277,7 @@ def decode_chunk(
     language: str,
     max_tokens: int,
     timestamps: bool,
-) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+) -> tuple[str, list[dict[str, Any]], str, dict[str, Any]]:
     features = processor(
         chunk, sampling_rate=16000, return_tensors="np",
     ).input_features.astype(np.float32)
@@ -199,9 +286,13 @@ def decode_chunk(
     encoder_seconds = time.perf_counter() - started
 
     tokenizer = processor.tokenizer
+    detected_language = normalize_language(language)
+    language_seconds = 0.0
+    if detected_language == "auto":
+        detected_language, language_seconds = detect_language(encoded, tokenizer, decoder)
     start = tokenizer.convert_tokens_to_ids("<|startoftranscript|>")
     forced = [token for _, token in processor.get_decoder_prompt_ids(
-        language=normalize_language(language), task="transcribe",
+        language=detected_language, task="transcribe",
     )]
     no_timestamps = tokenizer.convert_tokens_to_ids("<|notimestamps|>")
     if timestamps:
@@ -266,8 +357,9 @@ def decode_chunk(
                     "start": float(start_time), "end": float(end_time),
                     "text": segment_text,
                 })
-    return text, segments, {
+    return text, segments, detected_language, {
         "encoder_seconds": encoder_seconds,
+        "language_seconds": language_seconds,
         "decoder_seconds": decoder_seconds,
         "tokens": len(generated),
     }
@@ -287,29 +379,31 @@ def transcribe(args: argparse.Namespace) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="synapse-whisper-xdna-") as directory:
         wav = Path(directory) / "input.wav"
         convert_audio(Path(args.input), wav)
-        chunks = load_chunks(wav)
-        texts: list[str] = []
+        chunks = load_chunks(wav, args.chunk_seconds, args.overlap_seconds)
+        merged_text = ""
         timings: list[dict[str, Any]] = []
         segments: list[dict[str, Any]] = []
-        for index, chunk in enumerate(chunks):
-            text, chunk_segments, timing = decode_chunk(
-                chunk, processor, encoder, decoder, args.language, args.max_tokens,
+        selected_language = args.language
+        previous_end = 0.0
+        for index, (base_time, chunk) in enumerate(chunks):
+            text, chunk_segments, detected_language, timing = decode_chunk(
+                chunk, processor, encoder, decoder, selected_language, args.max_tokens,
                 args.timestamps,
             )
-            texts.append(text)
-            base_time = index * 30.0
-            segments.extend({
-                "start": segment["start"] + base_time,
-                "end": segment["end"] + base_time,
-                "text": segment["text"],
-            } for segment in chunk_segments)
-            timings.append({"index": index, **timing})
+            if selected_language == "auto":
+                selected_language = detected_language
+            merged_text = merge_text(merged_text, text)
+            append_segments(segments, chunk_segments, base_time, previous_end)
+            previous_end = base_time + len(chunk) / 16000.0
+            timings.append({"index": index, "offset": base_time, **timing})
+        if args.timestamps:
+            merged_text = " ".join(segment["text"] for segment in segments).strip()
     return {
         "schema_version": 1,
         "backend": "xdna-vitisai",
         "model": MODEL_ID,
-        "language": args.language,
-        "text": " ".join(text for text in texts if text).strip(),
+        "language": selected_language,
+        "text": merged_text,
         "chunks": len(chunks),
         "cache": str(cache),
         "providers": {
@@ -377,8 +471,10 @@ def build_parser() -> argparse.ArgumentParser:
             command.add_argument("--cache-dir")
     command = subparsers.add_parser("transcribe")
     command.add_argument("input")
-    command.add_argument("--language", default="it")
+    command.add_argument("--language", default="auto")
     command.add_argument("--max-tokens", type=int, default=160)
+    command.add_argument("--chunk-seconds", type=float, default=30.0)
+    command.add_argument("--overlap-seconds", type=float, default=1.0)
     command.add_argument("--timestamps", action="store_true")
     command.add_argument("--cache-dir")
     command.add_argument("--json", action="store_true")

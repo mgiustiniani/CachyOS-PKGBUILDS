@@ -1,6 +1,6 @@
 pkgbase = synapse-dub
 	pkgdesc = ROCm video dubbing pipeline with explicit multi-speaker voice mapping
-	pkgver = 0.6.0
+	pkgver = 0.7.0
 	pkgrel = 1
 	url = https://synapseos.it
 	install = synapse-dub.install
@@ -63,6 +63,7 @@ pkgbase = synapse-dub
 	optdepends = synapse-video-gen-rocm: generative visual video workflow
 	optdepends = synapse-translate-rocm: specialist local speech and text translation
 	optdepends = synapse-whisper-xdna: timestamp-capable XDNA2 transcription backend
+	optdepends = synapse-whisperx-rocm: word alignment and optional speaker diarization
 	optdepends = pipewire-audio: preview and monitor voice samples
 	backup = etc/synapse/dub/config.conf
 	source = wav2lip::git+https://github.com/Rudrabha/Wav2Lip.git#commit=bac9a81e63ecc153202353372e5724b83d9e6322
@@ -79,7 +80,7 @@ pkgbase = synapse-dub
 	sha256sums = 93ec0823629a9b120152e721858344308d8221cf2df398a2e1eda665568b4a4e
 	sha256sums = a58814742425829865d168e3a654291efb6bbb8bf1b74c2c3d564a3dce8292b1
 	sha256sums = 107a8b438aab2bbd18ddaa21cb08e53931f4bf50f41d45fa8b0db688d72d7666
-	sha256sums = a9c08682964b9df4e863eeda5ff7febd41f8d70cc11d48c4f2e1111408f03e24
+	sha256sums = 06e4de419fa51f84b822b891e996fe203397a47346c2926025e48ab8d37130ca
 	sha256sums = 2f88d98ebf91cf12c7eb63cedd848800b3c05b5dc64d77f093f8063cdb71de09
 
 pkgname = synapse-dub

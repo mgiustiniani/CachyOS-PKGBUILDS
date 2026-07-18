@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+set -euo pipefail
+export PYTHONPATH="/usr/lib/synapse-whisperx/python:/usr/lib/synapse-whisperx${PYTHONPATH:+:$PYTHONPATH}"
+exec /usr/bin/python /usr/lib/synapse-whisperx/synapse_whisperx/cli.py "$@"

@@ -9,13 +9,15 @@ package or the ISO.
 synapse-whisper-xdna doctor
 synapse-whisper-xdna warmup
 synapse-whisper-xdna transcribe recording.wav --language it
-synapse-whisper-xdna transcribe recording.wav --language it --json
-synapse-whisper-xdna transcribe recording.wav --language it --timestamps --json
+synapse-whisper-xdna transcribe recording.wav --language auto --json
+synapse-whisper-xdna transcribe recording.wav --language auto --timestamps --json
 ```
 
 Audio is normalized to mono 16 kHz PCM and processed in 30-second chunks. The
 optional timestamp mode returns speech segments suitable for downstream dubbing
-and diarization workflows. The
+and diarization workflows. Language detection is automatic unless `--language`
+is supplied. Long recordings use overlapping windows and timestamp-aware
+stitching to avoid hard 30-second cuts and duplicate segments. The
 encoder and decoder transformer run on VitisAI. With the current AMD graph, the
 decoder's small token-embedding `Gather` remains on CPU; the computationally
 heavy decoder partition executes on XDNA2.

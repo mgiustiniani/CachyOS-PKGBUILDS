@@ -1,0 +1,97 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+
+pkgname=synapse-whisperx-rocm
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Optional WhisperX alignment and diarization for XDNA Whisper transcripts'
+arch=('x86_64')
+url='https://synapseos.it'
+license=('BSD-2-Clause' 'MIT')
+backup=('etc/synapse/whisperx/config.conf')
+
+depends=(
+  'bash'
+  'ffmpeg'
+  'python'
+  'python-pytorch-opt-rocm'
+  'synapse-python-torchaudio-rocm'
+  'python-torchvision'
+  'python-torchcodec'
+  'python-numpy'
+  'python-pandas'
+  'python-transformers'
+  'python-nltk'
+  'python-scipy'
+  'python-soundfile'
+  'python-librosa'
+  'python-av'
+  'python-omegaconf'
+  'python-requests'
+  'python-yaml'
+  'python-tqdm'
+  'python-huggingface-hub'
+  'python-matplotlib'
+  'python-fsspec'
+  'python-scikit-learn'
+  'python-safetensors'
+  'python-aiohttp'
+  'python-filelock'
+  'python-networkx'
+  'python-rich'
+  'python-sqlalchemy'
+  'python-opentelemetry-api'
+  'python-opentelemetry-sdk'
+  'python-opentelemetry-exporter-otlp-proto-http'
+  'rocm-core'
+)
+optdepends=(
+  'synapse-whisper-xdna: verified XDNA2 Whisper transcription backend'
+)
+makedepends=('git' 'uv')
+
+_whisperx_commit='3ccc17b8de34f305300f8a3fd3c9f76ba820c0d0'
+source=(
+  "whisperx::git+https://github.com/m-bain/whisperX.git#commit=${_whisperx_commit}"
+  'config.conf'
+  'synapse-whisperx'
+  'sitecustomize.py'
+  'README.md'
+)
+sha256sums=(
+  'SKIP'
+  '0ca2838c123522b50fa41eff16d1d0a83cc2b19fac2db6f4fe00e24764810d2f'
+  '4a449f996ef021bd112f845d45149e0b34111084bd1fc111ebaef0616cdd38ad'
+  'd640fb7c5cf714b558a9992f79340f4e97db6bc4b5d9c73d3f39fd343941d8f1'
+  '0ffe8597aec1c9f78ff70167990980d2061c3fb52f7e2719d58788307f42fa1a'
+)
+
+build() {
+  local vendor="$srcdir/python-vendor"
+  rm -rf "$vendor"
+  mkdir -p "$vendor"
+  UV_LINK_MODE=copy uv pip install --python /usr/bin/python --target "$vendor" --no-deps \
+    'pyannote-audio==4.0.7' 'asteroid-filterbanks==0.4.0' \
+    'lightning-utilities==0.15.2' 'lightning==2.6.0' 'torchmetrics==1.8.2' \
+    'pyannote-core==6.0.1' 'pyannote-database==6.1.1' \
+    'pyannote-metrics==4.0.0' 'pyannote-pipeline==4.0.0' 'optuna==4.9.0' \
+    'pyannoteai-sdk==0.3.0' 'pytorch-metric-learning==2.9.0' \
+    'einops==0.8.2' 'torch-audiomentations==0.12.0' 'julius==0.2.8' \
+    'torch-pitch-shift==1.2.5' 'primePy==1.3'
+  rm -rf "$vendor/bin" "$vendor/.lock"
+}
+
+package() {
+  local appdir="$pkgdir/usr/lib/synapse-whisperx"
+  install -dm755 "$appdir/synapse_whisperx" "$appdir/python"
+  cp -a "$srcdir/python-vendor/." "$appdir/python/"
+  cp -a "$srcdir/whisperx/whisperx" "$appdir/whisperx"
+  find "$appdir" -type d -name '__pycache__' -prune -exec rm -rf {} +
+
+  install -Dm644 "$startdir/synapse_whisperx/cli.py" "$appdir/synapse_whisperx/cli.py"
+  install -Dm644 "$srcdir/sitecustomize.py" "$appdir/sitecustomize.py"
+  install -Dm755 "$srcdir/synapse-whisperx" "$pkgdir/usr/bin/synapse-whisperx"
+  install -Dm644 "$srcdir/config.conf" "$pkgdir/etc/synapse/whisperx/config.conf"
+  install -dm755 "$pkgdir/var/lib/synapse/whisperx/models"
+  install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 "$srcdir/whisperx/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/WHISPERX-LICENSE"
+}

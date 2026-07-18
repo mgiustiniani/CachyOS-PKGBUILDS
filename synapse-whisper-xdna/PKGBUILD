@@ -1,7 +1,7 @@
 # Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
 
 pkgname=synapse-whisper-xdna
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='Whisper large-v3-turbo transcription on AMD XDNA2 through VitisAI'
 arch=('x86_64')
@@ -18,10 +18,10 @@ source=(
 )
 sha256sums=(
   'b8f81adf21597a596b4e22779475713748d3d79c49be97925da13848822d9aff'
-  'ee5d62f139caef50ae65059a094112d695c44b8cc3b1f895e890a503fa639ec5'
+  '549d9ac724f4c0c7ffaf96dcab3e5aa0f35603c4e2fb9734bfd32a82427a586f'
   '94c3faea1f5a17f83e6e8dac17691becd957017750cfde56f9297446883fb01d'
   'b09c36f8942f1d3b52b37a1498ef358d05eed225d42701bb4d85f2c305845bf4'
-  '5c3201ef1fd4f9ab16d796f9d85b00a3bb05e4d96f4b3bebda0ab23a7fa9c5f9'
+  '1c1b5a87f595966ceb5b8f6718f5db1545c7fe89a6f7fcd9a7c8d677db39e54f'
   'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30'
 )
 

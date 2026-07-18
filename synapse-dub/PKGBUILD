@@ -1,7 +1,7 @@
 # Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
 
 pkgname=synapse-dub
-pkgver=0.6.0
+pkgver=0.7.0
 pkgrel=1
 pkgdesc='ROCm video dubbing pipeline with explicit multi-speaker voice mapping'
 arch=('x86_64')
@@ -66,6 +66,7 @@ optdepends=(
   'synapse-video-gen-rocm: generative visual video workflow'
   'synapse-translate-rocm: specialist local speech and text translation'
   'synapse-whisper-xdna: timestamp-capable XDNA2 transcription backend'
+  'synapse-whisperx-rocm: word alignment and optional speaker diarization'
   'pipewire-audio: preview and monitor voice samples'
 )
 makedepends=('git' 'uv')
@@ -87,7 +88,7 @@ sha256sums=('4bc8608597f3c31ec23ad7252134425f2b2ce777bf28df2623422f4b2649fe5b'
             '93ec0823629a9b120152e721858344308d8221cf2df398a2e1eda665568b4a4e'
             'a58814742425829865d168e3a654291efb6bbb8bf1b74c2c3d564a3dce8292b1'
             '107a8b438aab2bbd18ddaa21cb08e53931f4bf50f41d45fa8b0db688d72d7666'
-            'a9c08682964b9df4e863eeda5ff7febd41f8d70cc11d48c4f2e1111408f03e24'
+            '06e4de419fa51f84b822b891e996fe203397a47346c2926025e48ab8d37130ca'
             '2f88d98ebf91cf12c7eb63cedd848800b3c05b5dc64d77f093f8063cdb71de09')
 
 prepare() {

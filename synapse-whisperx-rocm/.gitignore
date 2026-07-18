@@ -1,0 +1,7 @@
+/pkg/
+/src/
+/whisperx/
+/python-vendor/
+*.pkg.tar.*
+__pycache__/
+*.pyc
