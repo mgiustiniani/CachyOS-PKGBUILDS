@@ -4,7 +4,7 @@
 
 pkgname=synapse-calamares
 pkgver=3.4.1
-pkgrel=15
+pkgrel=16
 pkgdesc='Distribution-independent installer framework'
 arch=('x86_64')
 license=(GPL-3.0-or-later)
