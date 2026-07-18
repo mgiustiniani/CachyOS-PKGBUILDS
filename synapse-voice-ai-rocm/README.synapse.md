@@ -6,6 +6,7 @@ Local multilingual speech recognition and voice-cloning TTS for Synapse Linux.
 
 - Chatterbox Multilingual V2, including Italian and zero-shot voice cloning
 - whisper.cpp ROCm with Whisper large-v3-turbo Q8
+- optional AMD XDNA2 Whisper encoder/decoder through `synapse-whisper-xdna`
 - OpenAI-compatible speech and transcription endpoints
 - user-scoped voice enrollment
 
@@ -29,6 +30,17 @@ Alternatively, mount the filesystem labelled `models`, then validate it:
 ```sh
 synapse-voice-import-models
 ```
+
+The default ASR backend remains ROCm. To prefer XDNA2 while retaining ROCm and
+CPU fallback, install `synapse-whisper-xdna` and set:
+
+```ini
+WHISPER_BACKEND=xdna
+WHISPER_FALLBACK=rocm,cpu
+```
+
+in `/etc/synapse/voice-ai/models.conf`. API callers can also submit an optional
+`backend` form field (`xdna`, `rocm`, `cpu`, or `auto`).
 
 Copy models into the installed system if desired:
 
@@ -57,4 +69,5 @@ curl http://127.0.0.1:8090/health
 The API implements `POST /v1/audio/speech`, `POST /v1/audio/transcriptions`,
 `POST /v1/voice/chat`, and `GET /v1/voices`. The voice-chat endpoint performs
 ASR → OpenAI-compatible LLM → cloned-voice TTS and returns JSON with WAV audio
-encoded as base64.
+encoded as base64. Transcription responses identify the backend that actually
+completed the request, including any fallback.

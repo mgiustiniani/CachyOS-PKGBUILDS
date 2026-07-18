@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -10,10 +11,11 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from .asr import Transcription, transcribe_wav
 from .config import load_config, resolve_model_paths, voice_directory
 from .engine import engine
 
-app = FastAPI(title="Synapse Voice AI", version="0.1.0")
+app = FastAPI(title="Synapse Voice AI", version="0.2.0")
 
 
 class SpeechRequest(BaseModel):
@@ -30,12 +32,19 @@ class SpeechRequest(BaseModel):
 def health() -> dict:
     try:
         chatterbox, whisper = resolve_model_paths()
+        config = load_config()
         models = {"chatterbox": str(chatterbox), "whisper": str(whisper)}
         status = "ok"
     except FileNotFoundError as exc:
         models = {"error": str(exc)}
+        config = load_config()
         status = "degraded"
-    return {"status": status, "models": models}
+    return {
+        "status": status,
+        "models": models,
+        "whisper_backend": config.get("WHISPER_BACKEND", "rocm"),
+        "xdna_available": shutil.which("synapse-whisper-xdna") is not None,
+    }
 
 
 @app.get("/v1/voices")
@@ -62,19 +71,15 @@ def speech(request: SpeechRequest) -> Response:
     return Response(payload, media_type="audio/wav")
 
 
-def _transcribe_audio(payload: bytes, filename: str | None, language: str) -> str:
-    try:
-        _, whisper_model = resolve_model_paths()
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
+def _transcribe_audio(
+    payload: bytes, filename: str | None, language: str, backend: str | None = None,
+) -> Transcription:
     suffix = Path(filename or "audio").suffix[:12]
     with tempfile.TemporaryDirectory(prefix="synapse-voice-") as directory:
         root = Path(directory)
         source = root / f"source{suffix}"
         source.write_bytes(payload)
         wav = root / "input.wav"
-        output = root / "transcript"
         converted = subprocess.run(
             [
                 "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
@@ -85,25 +90,20 @@ def _transcribe_audio(payload: bytes, filename: str | None, language: str) -> st
         )
         if converted.returncode != 0:
             raise HTTPException(status_code=400, detail=converted.stderr.strip())
-        result = subprocess.run(
-            [
-                "whisper-cli", "-m", str(whisper_model), "-f", str(wav),
-                "-l", language, "-otxt", "-of", str(output), "-np",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise HTTPException(status_code=500, detail=result.stderr.strip())
-        transcript_path = output.with_suffix(".txt")
-        return transcript_path.read_text().strip() if transcript_path.exists() else ""
+        try:
+            return transcribe_wav(wav, language, backend=backend)
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.post("/v1/audio/transcriptions")
 async def transcriptions(
-    file: UploadFile = File(...), language: str = Form(default="it")
+    file: UploadFile = File(...),
+    language: str = Form(default="it"),
+    backend: str | None = Form(default=None),
 ) -> dict:
-    return {"text": _transcribe_audio(await file.read(), file.filename, language)}
+    result = _transcribe_audio(await file.read(), file.filename, language, backend)
+    return {"text": result.text, "backend": result.backend}
 
 
 @app.post("/v1/voice/chat")
@@ -112,8 +112,10 @@ async def voice_chat(
     language: str = Form(default="it"),
     voice: str = Form(default="default"),
     model: str | None = Form(default=None),
+    backend: str | None = Form(default=None),
 ) -> dict:
-    transcript = _transcribe_audio(await file.read(), file.filename, language)
+    transcription = _transcribe_audio(await file.read(), file.filename, language, backend)
+    transcript = transcription.text
     if not transcript:
         raise HTTPException(status_code=400, detail="No speech was recognized")
 
@@ -146,6 +148,7 @@ async def voice_chat(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "transcript": transcript,
+        "transcription_backend": transcription.backend,
         "response": answer,
         "audio_format": "wav",
         "audio_base64": base64.b64encode(audio).decode("ascii"),

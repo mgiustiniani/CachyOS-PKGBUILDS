@@ -2,7 +2,7 @@
 
 pkgname=synapse-xdna-runtime
 pkgver=0.2.0
-pkgrel=2
+pkgrel=3
 pkgdesc='AMD XDNA NPU runtime integration, external SDK importer, validation, and proof tooling'
 arch=('x86_64')
 url='https://github.com/mgiustiniani/CachyOS-PKGBUILDS'
@@ -16,6 +16,7 @@ source=(
   'synapse-xdna'
   'synapse-xdna-import'
   '99-amdxdna.conf'
+  '99-synapse-xdna-user-manager.conf'
   'README.md'
 )
 noextract=('xrt_smi_strx.a')
@@ -24,7 +25,8 @@ sha256sums=(
   '96e942794a752c3e3c1d58d15337e1d9512eba316538832db09899159492982a'
   '48637626680214635a437329705aab9cfc7dea45782aa185101165d9dafe8040'
   '25855b5063a1b8c17b520ca6fd87d53bb78308a6bbe877f50065de97437a7f7d'
-  '76f71461834168e588a29cb4761976527bdbd7a2b8905a6991d4dd74966c66cc'
+  '4254873de4e196c4e50625d28aca2469f3dfaccfd1c0ef9ec3bd3f2a49ebe5ab'
+  'abf486194d96bc393d61d976c4583b5449e232f58c46060e1dfc47b9885d5f35'
 )
 
 package() {
@@ -34,6 +36,8 @@ package() {
   install -Dm755 synapse-xdna-import "$pkgdir/usr/bin/synapse-xdna-import"
   install -Dm644 99-amdxdna.conf \
     "$pkgdir/etc/security/limits.d/99-amdxdna.conf"
+  install -Dm644 99-synapse-xdna-user-manager.conf \
+    "$pkgdir/etc/systemd/system/user@.service.d/99-synapse-xdna.conf"
   install -Dm644 README.md \
     "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

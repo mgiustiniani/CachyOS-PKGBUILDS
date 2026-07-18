@@ -5,13 +5,14 @@ Strix Halo XDNA2 NPUs. It installs:
 
 - the AMD/Xilinx VTD validation archive omitted by the Arch
   `xrt-plugin-amdxdna` package;
-- the non-root memlock policy required by XRT;
+- the non-root memlock policy required by XRT, including the hard limit inherited by systemd user managers;
 - `synapse-xdna doctor` and `synapse-xdna proof`;
 - `synapse-xdna-import`, a post-install importer for the account-gated AMD SDK.
 
 ## Verify real NPU execution
 
-Open a new login session after installation, then run:
+Reboot after first installation so both PAM sessions and the systemd user
+manager inherit unlimited memlock, then run:
 
 ```bash
 synapse-xdna doctor

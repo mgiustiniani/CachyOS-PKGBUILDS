@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+set -euo pipefail
+
+if [[ -r /etc/profile.d/synapse-xdna.sh ]]; then
+    # shellcheck disable=SC1091
+    source /etc/profile.d/synapse-xdna.sh
+fi
+runtime=${RYZEN_AI_VENV:-/opt/synapse/xdna/ryzen-ai/1.7.1}
+python=${runtime}/bin/python
+[[ -x "$python" ]] || {
+    echo "AMD Ryzen AI runtime is unavailable; run synapse-xdna-import first." >&2
+    exit 4
+}
+export XILINX_XRT=${XILINX_XRT:-/usr}
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
+export PYTHONPATH=${PYTHONPATH:-}
+# AMD's activation script supplies the VitisAI provider and compiler library
+# search paths in addition to selecting the isolated Python runtime.
+# shellcheck disable=SC1090
+source "$runtime/bin/activate"
+exec "$python" /usr/lib/synapse-whisper-xdna/main.py "$@"

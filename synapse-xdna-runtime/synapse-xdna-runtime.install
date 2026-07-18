@@ -1,6 +1,7 @@
 post_install() {
   echo 'AMD XDNA runtime integration installed.'
-  echo 'Log out and back in before using the NPU so the memlock limit takes effect.'
+  systemctl daemon-reload 2>/dev/null || true
+  echo 'Reboot before using NPU applications from systemd user services so the memlock limit takes effect.'
   echo 'Then run: synapse-xdna doctor && synapse-xdna proof'
   echo 'Optional gated SDK import: synapse-xdna-import discover'
 }

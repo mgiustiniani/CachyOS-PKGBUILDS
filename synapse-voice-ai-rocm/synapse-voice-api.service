@@ -9,6 +9,7 @@ ExecStart=/usr/bin/synapse-voice-api
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+LimitMEMLOCK=infinity
 
 [Install]
 WantedBy=default.target

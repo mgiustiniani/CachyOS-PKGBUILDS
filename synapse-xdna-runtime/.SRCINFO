@@ -1,7 +1,7 @@
 pkgbase = synapse-xdna-runtime
 	pkgdesc = AMD XDNA NPU runtime integration, external SDK importer, validation, and proof tooling
 	pkgver = 0.2.0
-	pkgrel = 2
+	pkgrel = 3
 	url = https://github.com/mgiustiniani/CachyOS-PKGBUILDS
 	install = synapse-xdna-runtime.install
 	arch = x86_64
@@ -16,11 +16,13 @@ pkgbase = synapse-xdna-runtime
 	source = synapse-xdna
 	source = synapse-xdna-import
 	source = 99-amdxdna.conf
+	source = 99-synapse-xdna-user-manager.conf
 	source = README.md
 	sha256sums = 57384f0d5cf3fc604b00540ed9b7542826cd961c30a2f3207357c972cc3ef32c
 	sha256sums = 96e942794a752c3e3c1d58d15337e1d9512eba316538832db09899159492982a
 	sha256sums = 48637626680214635a437329705aab9cfc7dea45782aa185101165d9dafe8040
 	sha256sums = 25855b5063a1b8c17b520ca6fd87d53bb78308a6bbe877f50065de97437a7f7d
-	sha256sums = 76f71461834168e588a29cb4761976527bdbd7a2b8905a6991d4dd74966c66cc
+	sha256sums = 4254873de4e196c4e50625d28aca2469f3dfaccfd1c0ef9ec3bd3f2a49ebe5ab
+	sha256sums = abf486194d96bc393d61d976c4583b5449e232f58c46060e1dfc47b9885d5f35
 
 pkgname = synapse-xdna-runtime

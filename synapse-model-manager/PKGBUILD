@@ -2,7 +2,7 @@
 
 pkgname=synapse-model-manager
 pkgver=0.1.0
-pkgrel=3
+pkgrel=4
 pkgdesc='Shared external AI model discovery, acquisition, verification, and activation for Synapse Linux'
 arch=('any')
 url='https://synapseos.it'
