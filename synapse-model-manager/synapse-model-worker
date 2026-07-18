@@ -7,4 +7,7 @@ if [[ -n ${CREDENTIALS_DIRECTORY:-} && -r $credential ]]; then
     export HF_TOKEN
 fi
 export HF_HUB_DISABLE_TELEMETRY=1
+export HF_HOME=${HF_HOME:-/var/lib/synapse/model-manager/huggingface}
+export HF_XET_CACHE=${HF_XET_CACHE:-$HF_HOME/xet}
+mkdir -p "$HF_HOME" "$HF_XET_CACHE"
 exec /usr/bin/synapse-model worker --jsonl

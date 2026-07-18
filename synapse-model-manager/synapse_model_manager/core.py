@@ -625,13 +625,37 @@ def _run_hf_download(component: Component, target: Path, emitter: Emitter, contr
     for pattern in component.include:
         command.extend(["--include", pattern])
     command.extend(["--local-dir", str(target)])
-    emitter("download-started", {"component": component.id, "repo": component.repo, "revision": component.revision})
+    total = sum(item.size for item in component.required if item.size is not None)
+    if not component.required or any(item.size is None for item in component.required):
+        total = None
+    emitter("download-started", {
+        "component": component.id, "repo": component.repo, "revision": component.revision,
+        "totalBytes": total, "transport": "huggingface-xet",
+    })
     process = subprocess.Popen(
         command, stdout=sys.stderr, stderr=sys.stderr, env=_hf_subprocess_environment(),
     )
+    last_event = time.monotonic()
+    last_completed = 0
     try:
         while process.poll() is None:
             control()
+            now = time.monotonic()
+            if now - last_event >= 1.0:
+                completed = min(
+                    sum(path.stat().st_size for path in target.rglob("*") if path.is_file()),
+                    total,
+                ) if total is not None else sum(path.stat().st_size for path in target.rglob("*") if path.is_file())
+                rate = max(int((completed - last_completed) / max(now - last_event, 0.001)), 0)
+                remaining = max(total - completed, 0) if total is not None else None
+                emitter("download-progress", {
+                    "component": component.id, "path": str(target), "completedBytes": completed,
+                    "totalBytes": total, "bytesPerSecond": rate,
+                    "etaSeconds": int(remaining / rate) if remaining is not None and rate > 0 else None,
+                    "transport": "huggingface-xet",
+                })
+                last_event = now
+                last_completed = completed
             time.sleep(0.25)
     except (JobCancelledError, JobPausedError, KeyboardInterrupt):
         process.terminate()
@@ -643,6 +667,10 @@ def _run_hf_download(component: Component, target: Path, emitter: Emitter, contr
         raise
     if process.returncode:
         raise AcquisitionError(f"Hugging Face download failed for {component.id}")
+    emitter("download-completed", {
+        "component": component.id, "path": str(target), "completedBytes": total,
+        "transport": "huggingface-xet",
+    })
     if component.revision:
         (target / ".snapshot-revision").write_text(component.revision + "\n", encoding="utf-8")
 
@@ -786,12 +814,17 @@ def _aria2_progress(port: int, secret: str) -> tuple[int, int | None, int] | Non
     return completed, sum(totals) if totals and all(totals) else None, speed
 
 
-def _aria2_completed_and_shutdown(port: int, secret: str) -> bool:
-    stopped = _aria2_rpc(port, secret, "aria2.tellStopped", [-1, 1, ["status", "errorCode"]])
-    if not stopped or not any(item.get("status") == "complete" for item in stopped):
-        return False
+def _aria2_terminal_and_shutdown(port: int, secret: str) -> tuple[str, str | None] | None:
+    stopped = _aria2_rpc(port, secret, "aria2.tellStopped", [-1, 8, ["status", "errorCode", "errorMessage"]])
+    if not stopped:
+        return None
+    terminal = stopped[-1]
+    status = str(terminal.get("status", ""))
+    if status not in {"complete", "error", "removed"}:
+        return None
     _aria2_rpc(port, secret, "aria2.shutdown", [])
-    return True
+    detail = str(terminal.get("errorMessage") or terminal.get("errorCode") or "") or None
+    return status, detail
 
 
 def _download_http_file_aria2(
@@ -837,7 +870,6 @@ def _download_http_file_aria2(
             "--retry-wait=3",
             "--connect-timeout=30",
             "--timeout=120",
-            "--lowest-speed-limit=1K",
             "--check-certificate=true",
             "--show-console-readout=false",
             "--summary-interval=0",
@@ -856,6 +888,8 @@ def _download_http_file_aria2(
         started = time.monotonic()
         last_event = started
         process = subprocess.Popen(command, stdout=sys.stderr, stderr=sys.stderr)
+        terminal_error: str | None = None
+        shutdown_requested = False
         try:
             while process.poll() is None:
                 control()
@@ -872,8 +906,17 @@ def _download_http_file_aria2(
                             "etaSeconds": int(remaining / rate) if remaining is not None and rate > 0 else None,
                             "transport": "aria2",
                         })
-                    elif _aria2_completed_and_shutdown(rpc_port, rpc_secret):
-                        emitter("download-transport-finished", {"path": str(destination), "transport": "aria2"})
+                    elif not shutdown_requested:
+                        terminal = _aria2_terminal_and_shutdown(rpc_port, rpc_secret)
+                        if terminal:
+                            status, detail = terminal
+                            shutdown_requested = True
+                            emitter("download-transport-finished", {
+                                "path": str(destination), "transport": "aria2", "status": status,
+                                "error": detail,
+                            })
+                            if status != "complete":
+                                terminal_error = detail or status
                     last_event = now
                 time.sleep(0.25)
         except (JobCancelledError, JobPausedError, KeyboardInterrupt):
@@ -888,6 +931,8 @@ def _download_http_file_aria2(
                     process.kill()
                     process.wait()
             raise
+        if terminal_error:
+            raise AcquisitionError(f"aria2 download failed for {item.url}: {terminal_error}")
         if process.returncode:
             raise AcquisitionError(f"aria2 download failed for {item.url} with exit code {process.returncode}")
     finally:

@@ -1,7 +1,7 @@
 pkgbase = synapse-model-manager
 	pkgdesc = Shared external AI model discovery, acquisition, verification, and activation for Synapse Linux
 	pkgver = 0.4.0
-	pkgrel = 1
+	pkgrel = 6
 	url = https://synapseos.it
 	install = synapse-model-manager.install
 	arch = any

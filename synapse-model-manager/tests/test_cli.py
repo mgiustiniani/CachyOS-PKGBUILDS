@@ -58,6 +58,7 @@ class ModelManagerCliTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        self.extra_env: dict[str, str] = {}
         self.manifests = self.root / "manifests"
         self.source = self.root / "usb" / "models"
         self.destination = self.root / "destination"
@@ -160,6 +161,7 @@ http_files = [
         env = os.environ.copy()
         env["PYTHONPATH"] = str(PROJECT)
         env["SYNAPSE_MODEL_HTTP_TRANSPORT"] = "python"
+        env.update(self.extra_env)
         result = subprocess.run(
             self.cli_command(*arguments),
             cwd=PROJECT,
@@ -191,6 +193,36 @@ http_files = [
             resolved["data"]["components"][0]["path"],
             str(self.source / "safetensors/test/model"),
         )
+
+    def test_huggingface_transport_emits_managed_progress(self) -> None:
+        fake_bin = self.root / "bin"
+        fake_bin.mkdir()
+        fake_hf = fake_bin / "hf"
+        fake_hf.write_text(
+            """#!/usr/bin/env python3
+import pathlib,sys,time
+args=sys.argv[1:]
+root=pathlib.Path(args[args.index('--local-dir')+1])
+root.mkdir(parents=True,exist_ok=True)
+time.sleep(1.1)
+(root/'weights.bin').write_bytes(b'synapse-model-fixture\\n')
+(root/'config.json').write_text('{}\\n')
+""",
+            encoding="utf-8",
+        )
+        fake_hf.chmod(0o755)
+        self.extra_env["PATH"] = f"{fake_bin}:{os.environ.get('PATH', '')}"
+        result = self.run_cli(
+            "install", "fixture", "--source", "web", "--mode", "copy",
+            "--root", str(self.destination), "--jsonl",
+        )
+        events = [json.loads(line) for line in result.stdout.splitlines()]
+        starts = [entry for entry in events if entry["event"] == "download-started"]
+        progress = [entry for entry in events if entry["event"] == "download-progress"]
+        self.assertEqual(starts[0]["transport"], "huggingface-xet")
+        self.assertTrue(progress)
+        self.assertEqual(events[-1]["event"], "result")
+        self.assertTrue(events[-1]["ok"])
 
     def test_copy_install_is_verified_and_activated(self) -> None:
         result = self.run_cli(
