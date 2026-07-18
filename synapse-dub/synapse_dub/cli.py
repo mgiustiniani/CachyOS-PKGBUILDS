@@ -110,7 +110,10 @@ def normalize_script(data: Any) -> dict[str, Any]:
         )
     if not segments:
         raise ValueError("Dialogue script contains no usable segments")
-    return {"language": data.get("language"), "segments": segments}
+    normalized = {"language": data.get("language"), "segments": segments}
+    if data.get("transcription_backend"):
+        normalized["transcription_backend"] = data["transcription_backend"]
+    return normalized
 
 
 def media_duration(path: Path) -> float:
@@ -197,7 +200,39 @@ def download_youtube(
     return source
 
 
-def transcribe(audio: Path, output: Path, model_name: str, language: str | None) -> dict[str, Any]:
+def transcribe_xdna(audio: Path, output: Path, language: str | None) -> dict[str, Any]:
+    if not language:
+        raise RuntimeError("XDNA transcription requires --source-language")
+    require_command("synapse-whisper-xdna")
+    result = run([
+        "synapse-whisper-xdna", "transcribe", str(audio),
+        "--language", language, "--timestamps", "--json",
+    ], capture=True)
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("synapse-whisper-xdna returned invalid JSON") from exc
+    data = {
+        "language": language,
+        "transcription_backend": payload.get("backend", "xdna-vitisai"),
+        "segments": [
+            {
+                "id": index,
+                "start": float(segment["start"]),
+                "end": float(segment["end"]),
+                "speaker": "SPEAKER_00",
+                "text": str(segment["text"]).strip(),
+            }
+            for index, segment in enumerate(payload.get("segments", []))
+            if str(segment.get("text", "")).strip()
+        ],
+    }
+    data = normalize_script(data)
+    write_json(output, data)
+    return data
+
+
+def transcribe_openai(audio: Path, output: Path, model_name: str, language: str | None) -> dict[str, Any]:
     try:
         import whisper
     except ImportError as exc:
@@ -207,6 +242,7 @@ def transcribe(audio: Path, output: Path, model_name: str, language: str | None)
     result = model.transcribe(str(audio), language=language, word_timestamps=True)
     data = {
         "language": result.get("language", language),
+        "transcription_backend": "openai-whisper-rocm",
         "segments": [
             {
                 "id": segment.get("id", index),
@@ -222,6 +258,17 @@ def transcribe(audio: Path, output: Path, model_name: str, language: str | None)
     data = normalize_script(data)
     write_json(output, data)
     return data
+
+
+def transcribe(
+    audio: Path, output: Path, model_name: str, language: str | None, backend: str,
+) -> dict[str, Any]:
+    if backend in {"xdna", "auto"}:
+        try:
+            return transcribe_xdna(audio, output, language)
+        except RuntimeError as exc:
+            print(f"XDNA ASR unavailable, falling back to ROCm: {exc}", file=sys.stderr)
+    return transcribe_openai(audio, output, model_name, language)
 
 
 def diarize(audio: Path, script: dict[str, Any], token: str | None, model: str) -> dict[str, Any]:
@@ -744,7 +791,10 @@ def prepare(args: argparse.Namespace) -> tuple[Path, dict[str, Any], dict[str, s
     elif script_path.exists() and not args.force:
         script = normalize_script(read_json(script_path))
     else:
-        script = transcribe(audio, script_path, args.whisper_model, args.source_language)
+        asr_backend = args.asr_backend or load_config().get("ASR_BACKEND", "openai")
+        script = transcribe(
+            audio, script_path, args.whisper_model, args.source_language, asr_backend,
+        )
     if args.diarize:
         script = diarize(
             audio,
@@ -877,6 +927,10 @@ def add_prepare_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--speaker-map", type=Path, help="Pre-confirmed speaker-to-sample JSON for non-interactive runs")
     parser.add_argument("--source-language")
     parser.add_argument("--whisper-model", default="large-v3-turbo")
+    parser.add_argument(
+        "--asr-backend", choices=("openai", "xdna", "auto"),
+        help="Speech recognition backend; defaults to ASR_BACKEND from config",
+    )
     parser.add_argument("--diarize", action="store_true")
     parser.add_argument("--diarization-model", default="pyannote/speaker-diarization-community-1")
     parser.add_argument("--sample-seconds", type=float, default=12.0)

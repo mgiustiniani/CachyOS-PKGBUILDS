@@ -19,7 +19,9 @@ from typing import Any
 
 import numpy as np
 import onnxruntime as ort
-from transformers import WhisperProcessor
+import torch
+from transformers import GenerationConfig, WhisperProcessor
+from transformers.generation.logits_process import WhisperTimeStampLogitsProcessor
 
 MODEL_ID = "whisper-xdna2"
 MODEL_COMPONENT = "whisper-large-v3-turbo-onnx-npu"
@@ -187,7 +189,8 @@ def decode_chunk(
     decoder: ort.InferenceSession,
     language: str,
     max_tokens: int,
-) -> tuple[str, dict[str, Any]]:
+    timestamps: bool,
+) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
     features = processor(
         chunk, sampling_rate=16000, return_tensors="np",
     ).input_features.astype(np.float32)
@@ -200,13 +203,33 @@ def decode_chunk(
     forced = [token for _, token in processor.get_decoder_prompt_ids(
         language=normalize_language(language), task="transcribe",
     )]
+    no_timestamps = tokenizer.convert_tokens_to_ids("<|notimestamps|>")
+    if timestamps:
+        forced = [token for token in forced if token != no_timestamps]
     tokens = [start, *forced]
     eos = tokenizer.eos_token_id
     pad = tokenizer.pad_token_id
-    suppressed = np.asarray(
-        sorted(token for token in set(tokenizer.all_special_ids) if token != eos),
-        dtype=np.int64,
-    )
+    timestamp_begin = no_timestamps + 1
+    if timestamps:
+        generation = GenerationConfig(
+            eos_token_id=eos,
+            bos_token_id=tokenizer.bos_token_id,
+            no_timestamps_token_id=no_timestamps,
+            max_initial_timestamp_index=50,
+        )
+        timestamp_processor = WhisperTimeStampLogitsProcessor(
+            generation, begin_index=len(tokens),
+        )
+        suppressed = np.asarray(sorted(
+            token for token in set(tokenizer.all_special_ids)
+            if token != eos and token < timestamp_begin
+        ), dtype=np.int64)
+    else:
+        timestamp_processor = None
+        suppressed = np.asarray(sorted(
+            token for token in set(tokenizer.all_special_ids) if token != eos
+        ), dtype=np.int64)
+
     decoder_seconds = 0.0
     for _ in range(max_tokens):
         values = np.full((1, 448), pad, dtype=np.int64)
@@ -215,14 +238,35 @@ def decode_chunk(
         logits = decoder.run(None, {"x": values, "xa": encoded})[0]
         decoder_seconds += time.perf_counter() - started
         next_logits = logits[0, len(tokens) - 1].copy()
-        next_logits[suppressed] = -np.inf
-        token = int(np.argmax(next_logits))
+        if timestamp_processor is not None:
+            scores = timestamp_processor(
+                torch.tensor([tokens]), torch.from_numpy(next_logits[None]),
+            )
+            scores[0, suppressed] = -float("inf")
+            token = int(torch.argmax(scores[0]))
+        else:
+            next_logits[suppressed] = -np.inf
+            token = int(np.argmax(next_logits))
         tokens.append(token)
         if token == eos or len(tokens) >= 448:
             break
+
     generated = tokens[1 + len(forced):]
     text = tokenizer.decode(generated, skip_special_tokens=True).strip()
-    return text, {
+    segments: list[dict[str, Any]] = []
+    if timestamps:
+        decoded = tokenizer.decode(
+            generated, decode_with_timestamps=True, output_offsets=True,
+        )
+        for offset in decoded.get("offsets", []):
+            segment_text = offset["text"].strip()
+            start_time, end_time = offset["timestamp"]
+            if segment_text and end_time is not None:
+                segments.append({
+                    "start": float(start_time), "end": float(end_time),
+                    "text": segment_text,
+                })
+    return text, segments, {
         "encoder_seconds": encoder_seconds,
         "decoder_seconds": decoder_seconds,
         "tokens": len(generated),
@@ -246,11 +290,19 @@ def transcribe(args: argparse.Namespace) -> dict[str, Any]:
         chunks = load_chunks(wav)
         texts: list[str] = []
         timings: list[dict[str, Any]] = []
+        segments: list[dict[str, Any]] = []
         for index, chunk in enumerate(chunks):
-            text, timing = decode_chunk(
+            text, chunk_segments, timing = decode_chunk(
                 chunk, processor, encoder, decoder, args.language, args.max_tokens,
+                args.timestamps,
             )
             texts.append(text)
+            base_time = index * 30.0
+            segments.extend({
+                "start": segment["start"] + base_time,
+                "end": segment["end"] + base_time,
+                "text": segment["text"],
+            } for segment in chunk_segments)
             timings.append({"index": index, **timing})
     return {
         "schema_version": 1,
@@ -266,6 +318,7 @@ def transcribe(args: argparse.Namespace) -> dict[str, Any]:
         },
         "session": load_times,
         "timings": timings,
+        "segments": segments,
     }
 
 
@@ -326,6 +379,7 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("input")
     command.add_argument("--language", default="it")
     command.add_argument("--max-tokens", type=int, default=160)
+    command.add_argument("--timestamps", action="store_true")
     command.add_argument("--cache-dir")
     command.add_argument("--json", action="store_true")
     return parser

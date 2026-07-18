@@ -1,6 +1,6 @@
 pkgbase = synapse-whisper-xdna
 	pkgdesc = Whisper large-v3-turbo transcription on AMD XDNA2 through VitisAI
-	pkgver = 0.1.0
+	pkgver = 0.2.0
 	pkgrel = 1
 	url = https://github.com/mgiustiniani/CachyOS-PKGBUILDS
 	arch = x86_64
@@ -16,10 +16,10 @@ pkgbase = synapse-whisper-xdna
 	source = README.md
 	source = LICENSE
 	sha256sums = b8f81adf21597a596b4e22779475713748d3d79c49be97925da13848822d9aff
-	sha256sums = 84eefdaaccba03473c63d371098f52fc61922278b7aca6589f6cfcd5b4136307
+	sha256sums = ee5d62f139caef50ae65059a094112d695c44b8cc3b1f895e890a503fa639ec5
 	sha256sums = 94c3faea1f5a17f83e6e8dac17691becd957017750cfde56f9297446883fb01d
 	sha256sums = b09c36f8942f1d3b52b37a1498ef358d05eed225d42701bb4d85f2c305845bf4
-	sha256sums = d17f873f67086913372d40bf4d0d71587e5d415a8c7b555209d199bbfc08ea05
+	sha256sums = 5c3201ef1fd4f9ab16d796f9d85b00a3bb05e4d96f4b3bebda0ab23a7fa9c5f9
 	sha256sums = cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30
 
 pkgname = synapse-whisper-xdna
