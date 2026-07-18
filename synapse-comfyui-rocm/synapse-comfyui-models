@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-only
+set -euo pipefail
+model=comfyui-z-image-turbo
+command=${1:-status}
+(($#)) && shift
+case "$command" in
+  status|verify|resolve|resume|retry|cancel|pause)
+    exec synapse-model "$command" "$model" "$@"
+    ;;
+  install)
+    exec synapse-model install "$model" "$@"
+    ;;
+  enqueue)
+    exec synapse-model enqueue "$model" "$@"
+    ;;
+  *)
+    echo "usage: synapse-comfyui-models {status|verify|install|enqueue|resolve|resume|retry|pause|cancel} [OPTIONS...]" >&2
+    exit 2
+    ;;
+esac

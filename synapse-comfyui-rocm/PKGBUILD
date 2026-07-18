@@ -2,7 +2,7 @@
 
 pkgname=synapse-comfyui-rocm
 pkgver=0.28.0
-pkgrel=6
+pkgrel=8
 pkgdesc='Node-based ComfyUI visual generation workflows for Radeon ROCm'
 arch=('x86_64')
 url='https://github.com/Comfy-Org/ComfyUI'
@@ -17,6 +17,7 @@ depends=(
   'python-tqdm' 'python-psutil' 'python-alembic' 'python-sqlalchemy'
   'python-filelock' 'python-av' 'python-requests' 'python-pydantic'
   'python-pydantic-settings' 'python-blake3' 'rocm-core'
+  'synapse-model-manager>=0.4.0'
 )
 makedepends=('git' 'uv')
 
@@ -24,15 +25,22 @@ _comfy_commit='700821e1364eaab0e8f21c538a2131719fec57bf'
 source=(
   "ComfyUI::git+https://github.com/Comfy-Org/ComfyUI.git#commit=${_comfy_commit}"
   'config.conf' 'synapse-comfyui' 'synapse-comfyui-doctor' 'synapse-comfyui.service' 'sitecustomize.py' 'README.md'
+  'comfyui-z-image-turbo.toml' 'comfyui_model_paths.py' 'synapse-comfyui-models'
+  'z-image-turbo.json' 'z-image-turbo-api.json'
 )
 sha256sums=(
   'SKIP'
-  'd8d45a63467dfa9d6443eaa2cd069b8c3c2dc8ecfe0cb61a4513de08c9a286ed'
-  '05601d644778627f37ac26e86397d5ec06478e91b434b6e22c2cd755935b4dbc'
+  'aef3fed890424f08dc1b2265033e6905cc82035f57b1d167c14f70fbda64fa83'
+  '460dd7befabf99909e82fdb4e912a99aeeaf2653cc2779be725969ff500d131a'
   '17f71bf7d1fe69a35ac11b26d68b41768a0b08fa28c88899cb3cb62f25a029eb'
   '2c3f47244c9435d9c5cf9fb13e4806330aaf1bdd50b2ebd786101066d237341e'
   'aaf933256cce52d58c17968e4383e4a1cc827e16701d8ccf4074f66f30b8c2a1'
-  '337903c93b3562c6ffcff5af3c61fb490369ec6c87cace7a3bf6f09485f5079b'
+  '785226732b4b4c1587173a66c3e082da0cd9f76f15024fd503594acc35530e38'
+  '41833642db6ee6e978a1b200d0014a6d14f063e330d17f3b1dd7c811b3e90c5e'
+  '66629f2988092c6dc9d8ebe280baa07912d3f1653e6de6f1a027a03efa0886a9'
+  'a0e1d330ea063128d1406842666f58305fb10199906bd161a064962c14cf2bce'
+  '307904f13211cfa5405b308e748ef8035c68991b5bb4cfd4733daed9bc511b77'
+  '6bb8cf8acae459a7e27ad8ed9ce0fda5b792d948ed0cc6d6b2b5d3fc60d4ebdf'
 )
 
 build() {
@@ -59,10 +67,18 @@ package() {
   find "$app" -type f \( -name '*.safetensors' -o -name '*.onnx' -o -name '*.pt' -o -name '*.bin' \) -delete
 
   install -Dm644 "$srcdir/sitecustomize.py" "$app/sitecustomize.py"
+  install -Dm755 "$srcdir/comfyui_model_paths.py" "$app/comfyui_model_paths.py"
   install -Dm755 "$srcdir/synapse-comfyui" "$pkgdir/usr/bin/synapse-comfyui"
   install -Dm755 "$srcdir/synapse-comfyui-doctor" "$pkgdir/usr/bin/synapse-comfyui-doctor"
+  install -Dm755 "$srcdir/synapse-comfyui-models" "$pkgdir/usr/bin/synapse-comfyui-models"
   install -Dm644 "$srcdir/config.conf" "$pkgdir/etc/synapse/comfyui/config.conf"
   install -Dm644 "$srcdir/synapse-comfyui.service" "$pkgdir/usr/lib/systemd/user/synapse-comfyui.service"
+  install -Dm644 "$srcdir/comfyui-z-image-turbo.toml" \
+    "$pkgdir/usr/share/synapse/models.d/comfyui-z-image-turbo.toml"
+  install -Dm644 "$srcdir/z-image-turbo.json" \
+    "$pkgdir/usr/share/synapse/comfyui/workflows/z-image-turbo.json"
+  install -Dm644 "$srcdir/z-image-turbo-api.json" \
+    "$pkgdir/usr/share/synapse/comfyui/workflows/z-image-turbo-api.json"
   install -dm755 "$pkgdir/var/lib/synapse/comfyui/models"
   install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 "$srcdir/ComfyUI/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
