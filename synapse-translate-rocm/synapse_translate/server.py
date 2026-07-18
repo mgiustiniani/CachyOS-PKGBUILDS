@@ -4,7 +4,9 @@ import argparse
 import io
 import json
 import os
+import signal
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +61,27 @@ class TextTranslationRequest(BaseModel):
     texts: list[str] = Field(min_length=1, max_length=128)
     source_language: str = "eng"
     target_language: str
+
+
+class IdleState:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last_activity = time.monotonic()
+        self._active_requests = 0
+
+    def begin_request(self) -> None:
+        with self._lock:
+            self._active_requests += 1
+            self._last_activity = time.monotonic()
+
+    def end_request(self) -> None:
+        with self._lock:
+            self._active_requests = max(0, self._active_requests - 1)
+            self._last_activity = time.monotonic()
+
+    def expired(self, timeout: int) -> bool:
+        with self._lock:
+            return self._active_requests == 0 and time.monotonic() - self._last_activity >= timeout
 
 
 class TranslationBackend:
@@ -121,11 +144,20 @@ class TranslationBackend:
         return self.processor.batch_decode(sequences, skip_special_tokens=True)[0].strip()
 
 
-def create_app() -> FastAPI:
+def create_app(idle_state: IdleState | None = None) -> FastAPI:
     config = load_config()
     model_root = Path(config.get("MODEL_ROOT", "/var/lib/synapse/translate/models/seamless-m4t-v2-large"))
     backend = TranslationBackend(model_root, config.get("DTYPE", "bfloat16"))
-    app = FastAPI(title="Synapse Translation Server", version="0.1.0")
+    app = FastAPI(title="Synapse Translation Server", version="0.2.0")
+
+    if idle_state is not None:
+        @app.middleware("http")
+        async def track_activity(request, call_next):
+            idle_state.begin_request()
+            try:
+                return await call_next(request)
+            finally:
+                idle_state.end_request()
 
     @app.get("/health")
     def health() -> dict[str, Any]:
@@ -191,6 +223,11 @@ def main() -> int:
     serve = sub.add_parser("serve")
     serve.add_argument("--host", default=config.get("BIND", "127.0.0.1"))
     serve.add_argument("--port", type=int, default=int(config.get("PORT", "8091")))
+    serve.add_argument("--fd", type=int, default=None)
+    serve.add_argument(
+        "--idle-timeout", type=int, default=int(config.get("IDLE_TIMEOUT", "120")),
+        help="exit after this many idle seconds; 0 disables automatic shutdown",
+    )
     check = sub.add_parser("doctor")
     check.add_argument(
         "--model-root", type=Path,
@@ -200,7 +237,26 @@ def main() -> int:
     if args.command == "doctor":
         return doctor(args.model_root)
     import uvicorn
-    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="info")
+
+    idle_state = IdleState()
+    app = create_app(idle_state)
+    if args.idle_timeout > 0:
+        def idle_watchdog() -> None:
+            interval = min(5.0, max(1.0, args.idle_timeout / 4))
+            while True:
+                time.sleep(interval)
+                if idle_state.expired(args.idle_timeout):
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    return
+
+        threading.Thread(target=idle_watchdog, name="idle-watchdog", daemon=True).start()
+
+    run_options = {"app": app, "log_level": "info"}
+    if args.fd is None:
+        run_options.update(host=args.host, port=args.port)
+    else:
+        run_options["fd"] = args.fd
+    uvicorn.run(**run_options)
     return 0
 
 

@@ -22,8 +22,13 @@ Models remain external to packages and ISO images. Internet provisioning:
 
 ```sh
 sudo synapse-translate-models download
-sudo systemctl enable --now synapse-translate.service
+sudo systemctl enable --now synapse-translate.socket
 ```
+
+The socket starts the ROCm worker on the first request. Because the current HSA
+runtime keeps one helper thread busy after model initialization, the worker
+exits automatically after `IDLE_TIMEOUT` seconds without active requests while
+the socket remains available. A later request starts a fresh worker.
 
 The shared `synapse-python-hf-compat` package supplies pinned Transformers,
 Tokenizers and SentencePiece. The server uses `python-pytorch-opt-rocm`; it does

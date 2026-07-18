@@ -1,0 +1,10 @@
+[Unit]
+Description=Synapse ROCm specialist translation socket
+
+[Socket]
+ListenStream=127.0.0.1:8091
+NoDelay=true
+Service=synapse-translate.service
+
+[Install]
+WantedBy=sockets.target

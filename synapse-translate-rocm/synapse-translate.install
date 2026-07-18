@@ -5,11 +5,21 @@ post_install() {
 Synapse Translation ROCm installed.
 Provision the external SeamlessM4T-v2-large model through Calamares Server
 Setup or run `sudo synapse-translate-models download`, then enable
-`synapse-translate.service`.
+`synapse-translate.socket`. The GPU worker starts on the first request and
+stops automatically after its configured idle timeout.
 EOF
 }
 
 post_upgrade() {
   systemd-sysusers
   systemd-tmpfiles --create synapse-translate.conf
+  systemctl daemon-reload 2>/dev/null || true
+
+  # Migrate the old always-on worker to socket activation without changing
+  # whether the translation endpoint was provisioned by the administrator.
+  if systemctl is-enabled --quiet synapse-translate.service 2>/dev/null || \
+     systemctl is-active --quiet synapse-translate.service 2>/dev/null; then
+    systemctl disable --now synapse-translate.service 2>/dev/null || true
+    systemctl enable --now synapse-translate.socket 2>/dev/null || true
+  fi
 }
