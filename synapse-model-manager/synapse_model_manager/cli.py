@@ -3,24 +3,33 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 from . import __version__
 from .core import (
+    JobConflictError,
+    JobStore,
     Manifest,
     ManifestError,
     ModelManagerError,
     SourceNotFoundError,
     ValidationError,
     discover_roots,
+    enqueue_job,
     find_complete_source,
     install_manifest,
     list_jobs,
     load_registry,
     load_state,
+    pending_jobs,
+    remove_job,
     request_job_control,
+    retry_job,
     utc_now,
     validate_manifest,
 )
@@ -108,6 +117,16 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--skip-hash", action="store_true")
     install.add_argument("--restart", action="store_true", help="Discard persistent partial data and restart")
 
+    enqueue = subparsers.add_parser("enqueue", help="Add a persistent transfer to the background queue")
+    enqueue.add_argument("model")
+    enqueue.add_argument("--source", default="auto", help="auto, usb, web, or an archive root path")
+    enqueue.add_argument("--mode", choices=("external", "copy"), default="copy")
+    enqueue.add_argument("--root", help="Destination model root for copy mode")
+    enqueue.add_argument("--skip-hash", action="store_true")
+    enqueue.add_argument("--restart", action="store_true", help="Replace incompatible queued state and discard partials when run")
+    enqueue.add_argument("--priority", type=int, default=0)
+    enqueue.add_argument("--no-start-worker", action="store_true", help="Do not ask systemd to start the system worker")
+
     jobs = subparsers.add_parser("jobs", help="List persistent transfer jobs")
     jobs.add_argument("model", nargs="?")
     pause = subparsers.add_parser("pause", help="Request cooperative transfer pause")
@@ -116,6 +135,15 @@ def build_parser() -> argparse.ArgumentParser:
     resume.add_argument("model")
     cancel = subparsers.add_parser("cancel", help="Request cooperative transfer cancellation")
     cancel.add_argument("model")
+    retry = subparsers.add_parser("retry", help="Return a stopped or failed transfer to the queue")
+    retry.add_argument("model")
+    remove = subparsers.add_parser("remove-job", help="Remove a stopped queue job")
+    remove.add_argument("model")
+    remove.add_argument("--partials", action="store_true", help="Also remove its persistent staging directory")
+    worker = subparsers.add_parser("worker", help="Process the persistent transfer queue")
+    worker.add_argument("--wait", action="store_true", help="Keep polling after the queue becomes empty")
+    worker.add_argument("--poll-seconds", type=float, default=2.0)
+    worker.add_argument("--max-jobs", type=int, default=0, help="Maximum attempts before exit; zero is unlimited")
 
     resolve = subparsers.add_parser("resolve", help="Resolve activated component paths")
     resolve.add_argument("model")
@@ -127,6 +155,89 @@ def require_manifest(registry: dict[str, Manifest], model_id: str) -> Manifest:
         return registry[model_id]
     except KeyError as exc:
         raise ManifestError(f"unknown model bundle: {model_id}") from exc
+
+
+def _source_configuration(value: str) -> tuple[str, Path | None]:
+    if value in {"auto", "usb", "web"}:
+        return value, None
+    return "usb", Path(value)
+
+
+def _start_system_worker(state_dir: Path) -> bool:
+    if state_dir != Path("/var/lib/synapse/model-manager") or os.geteuid() != 0 or shutil.which("systemctl") is None:
+        return False
+    result = subprocess.run(
+        ["systemctl", "start", "--no-block", "synapse-model-worker.service"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def _process_queue(
+    registry: dict[str, Manifest],
+    state_dir: Path,
+    output: Output,
+    *,
+    wait: bool,
+    poll_seconds: float,
+    max_jobs: int,
+) -> dict[str, Any]:
+    if poll_seconds < 0.1:
+        raise ManifestError("--poll-seconds must be at least 0.1")
+    attempts: list[dict[str, Any]] = []
+    while True:
+        candidates = pending_jobs(state_dir)
+        if not candidates:
+            if wait:
+                time.sleep(poll_seconds)
+                continue
+            break
+        made_attempt = False
+        for job in candidates:
+            model_id = str(job.get("model", ""))
+            try:
+                manifest = require_manifest(registry, model_id)
+            except ModelManagerError as exc:
+                store = JobStore(state_dir, model_id)
+                store.acquire()
+                try:
+                    store.set_state("failed", error=str(exc))
+                finally:
+                    store.release()
+                attempts.append({"model": model_id, "ok": False, "error": {"code": exc.code, "message": str(exc)}})
+                made_attempt = True
+                continue
+            explicit_value = job.get("explicitSource")
+            output.event("worker-started-job", {"model": model_id, "state": job.get("state")})
+            try:
+                result = install_manifest(
+                    manifest,
+                    source=str(job.get("source", "auto")),
+                    mode=str(job.get("mode", "copy")),
+                    destination_root=Path(str(job.get("destinationRoot", manifest.default_root))),
+                    state_dir=state_dir,
+                    explicit_source=Path(str(explicit_value)) if explicit_value else None,
+                    verify_hashes=bool(job.get("verifyHashes", True)),
+                    emitter=output.event,
+                    restart=bool(job.get("restartRequested", False)),
+                )
+                attempts.append({"model": model_id, "ok": True, "result": result})
+                made_attempt = True
+            except JobConflictError:
+                output.event("worker-skipped-active-job", {"model": model_id})
+                continue
+            except ModelManagerError as exc:
+                attempts.append({"model": model_id, "ok": False, "error": {"code": exc.code, "message": str(exc)}})
+                made_attempt = True
+            if max_jobs and len(attempts) >= max_jobs:
+                return {"attempts": attempts, "pending": len(pending_jobs(state_dir))}
+        if not wait:
+            break
+        if not made_attempt:
+            time.sleep(poll_seconds)
+    return {"attempts": attempts, "pending": len(pending_jobs(state_dir))}
 
 
 def manifest_dict(manifest: Manifest) -> dict[str, Any]:
@@ -200,11 +311,7 @@ def run_command(args: argparse.Namespace, registry: dict[str, Manifest], output:
         return {"model": manifest.id, "validation": report.as_dict()}
     if args.command == "install":
         manifest = require_manifest(registry, args.model)
-        source_kind = args.source
-        explicit = None
-        if source_kind not in {"auto", "usb", "web"}:
-            explicit = Path(source_kind)
-            source_kind = "usb"
+        source_kind, explicit = _source_configuration(args.source)
         destination = Path(args.root or manifest.default_root)
         return install_manifest(
             manifest,
@@ -217,11 +324,40 @@ def run_command(args: argparse.Namespace, registry: dict[str, Manifest], output:
             emitter=output.event,
             restart=args.restart,
         )
+    if args.command == "enqueue":
+        manifest = require_manifest(registry, args.model)
+        source_kind, explicit = _source_configuration(args.source)
+        value = enqueue_job(
+            state_dir,
+            manifest.id,
+            source=source_kind,
+            mode=args.mode,
+            destination_root=Path(args.root or manifest.default_root),
+            explicit_source=explicit,
+            verify_hashes=not args.skip_hash,
+            restart=args.restart,
+            priority=args.priority,
+        )
+        worker_started = False if args.no_start_worker else _start_system_worker(state_dir)
+        return {"job": value, "workerStarted": worker_started}
     if args.command == "jobs":
         return {"jobs": list_jobs(state_dir, args.model)}
     if args.command in {"pause", "cancel"}:
         value = request_job_control(state_dir, args.model, args.command)
         return {"job": value}
+    if args.command == "retry":
+        return {"job": retry_job(state_dir, args.model)}
+    if args.command == "remove-job":
+        return remove_job(state_dir, args.model, partials=args.partials)
+    if args.command == "worker":
+        return _process_queue(
+            registry,
+            state_dir,
+            output,
+            wait=args.wait,
+            poll_seconds=args.poll_seconds,
+            max_jobs=args.max_jobs,
+        )
     if args.command == "resume":
         manifest = require_manifest(registry, args.model)
         jobs = list_jobs(state_dir, args.model)

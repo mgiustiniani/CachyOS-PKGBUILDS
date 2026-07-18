@@ -376,6 +376,51 @@ http_files = [
         )
         self.assertTrue(json.loads(restarted.stdout)["ok"])
 
+    def test_background_queue_runs_highest_priority_first(self) -> None:
+        low = self.run_cli(
+            "enqueue", "fixture", "--source", str(self.source), "--mode", "copy",
+            "--root", str(self.destination), "--priority", "1", "--no-start-worker", "--json",
+        )
+        high = self.run_cli(
+            "enqueue", "web-fixture", "--source", "web", "--mode", "copy",
+            "--root", str(self.destination), "--priority", "10", "--no-start-worker", "--json",
+        )
+        self.assertEqual(json.loads(low.stdout)["data"]["job"]["state"], "queued")
+        self.assertFalse(json.loads(high.stdout)["data"]["workerStarted"])
+        worker = json.loads(self.run_cli("worker", "--max-jobs", "1", "--json").stdout)
+        self.assertEqual(worker["data"]["attempts"][0]["model"], "web-fixture")
+        states = {job["model"]: job["state"] for job in json.loads(self.run_cli("jobs", "--json").stdout)["data"]["jobs"]}
+        self.assertEqual(states["web-fixture"], "completed")
+        self.assertEqual(states["fixture"], "queued")
+
+    def test_worker_recovers_stale_running_job(self) -> None:
+        self.run_cli(
+            "enqueue", "web-fixture", "--source", "web", "--mode", "copy",
+            "--root", str(self.destination), "--no-start-worker", "--json",
+        )
+        job_path = self.state / "jobs/web-fixture.json"
+        job = json.loads(job_path.read_text())
+        job["state"] = "running"
+        job_path.write_text(json.dumps(job), encoding="utf-8")
+        result = json.loads(self.run_cli("worker", "--json").stdout)
+        self.assertTrue(result["data"]["attempts"][0]["ok"])
+        self.assertEqual(json.loads(job_path.read_text())["state"], "completed")
+
+    def test_retry_and_remove_job_with_partials(self) -> None:
+        self.run_cli(
+            "install", "web-fixture", "--source", "usb", "--mode", "copy",
+            "--root", str(self.destination), "--json", expected=3,
+        )
+        retried = json.loads(self.run_cli("retry", "web-fixture", "--json").stdout)
+        self.assertEqual(retried["data"]["job"]["state"], "queued")
+        staging = self.destination / ".synapse-model-staging/web-fixture"
+        staging.mkdir(parents=True, exist_ok=True)
+        (staging / "partial").write_bytes(b"partial")
+        removed = json.loads(self.run_cli("remove-job", "web-fixture", "--partials", "--json").stdout)
+        self.assertTrue(removed["data"]["partialsRemoved"])
+        self.assertFalse(staging.exists())
+        self.assertEqual(json.loads(self.run_cli("jobs", "web-fixture", "--json").stdout)["data"]["jobs"], [])
+
     def test_jsonl_emits_events_and_final_result(self) -> None:
         result = self.run_cli(
             "install", "fixture", "--source", str(self.source), "--mode", "copy",

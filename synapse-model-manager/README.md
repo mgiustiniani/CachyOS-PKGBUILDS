@@ -12,10 +12,13 @@ synapse-model status
 synapse-model verify voice-ai --source auto
 synapse-model install voice-ai --source usb --mode external
 sudo synapse-model install voice-ai --source web --mode copy
+sudo synapse-model enqueue trellis2 --source web --mode copy --priority 10
 synapse-model jobs
 synapse-model pause voice-ai
 synapse-model resume voice-ai
 synapse-model cancel voice-ai
+synapse-model retry voice-ai
+synapse-model remove-job voice-ai --partials
 synapse-model resolve voice-ai
 ```
 
@@ -27,7 +30,19 @@ Copy and web installations use a deterministic staging directory under the desti
 
 HTTP sources resume through validated Range requests. Hugging Face sources reuse the official `hf download` local cache and Xet transfer implementation. USB copies use `.part` files and continue from the existing byte offset. A disk-space preflight runs before acquisition.
 
-Jobs are stored atomically under `/var/lib/synapse/model-manager/jobs`. `pause` and `cancel` are cooperative: the running transfer observes the request at its next I/O boundary and exits while retaining partial data. This release provides a persistent synchronous engine; a background queue and desktop frontend can be layered on this job API later.
+Jobs are stored atomically under `/var/lib/synapse/model-manager/jobs`. `pause` and `cancel` are cooperative: the running transfer observes the request at its next I/O boundary and exits while retaining partial data.
+
+## Background queue
+
+`enqueue` writes a durable request and asks systemd to start `synapse-model-worker.service` when used as root with the default state directory. The worker processes one model at a time, highest priority first, and continues after individual failures. Stale `running` and `interrupted` jobs are resumed after a worker crash or reboot; failed, paused, and cancelled jobs require `retry` or an explicit `resume`.
+
+Enable boot recovery and automatic directory watching once on installed systems:
+
+```sh
+sudo systemctl enable --now synapse-model-worker.path synapse-model-worker.service
+```
+
+The service runs as root because system model destinations are protected. Its systemd sandbox limits writable locations to `/var/lib/synapse`, `/mnt`, `/media`, and `/run/media`. Queue records never contain Hugging Face tokens. A future desktop frontend should enqueue through a narrow polkit action instead of changing queue-directory permissions.
 
 Modes:
 

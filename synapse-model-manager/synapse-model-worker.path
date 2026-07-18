@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch the Synapse model transfer queue
+Documentation=file:/usr/share/doc/synapse-model-manager/README.md
+
+[Path]
+PathChanged=/var/lib/synapse/model-manager/jobs
+Unit=synapse-model-worker.service
+MakeDirectory=yes
+
+[Install]
+WantedBy=multi-user.target

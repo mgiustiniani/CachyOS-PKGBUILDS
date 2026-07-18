@@ -245,6 +245,101 @@ def request_job_control(state_dir: Path, model_id: str, action: str) -> dict[str
     return store.set_state(f"{action}-requested")
 
 
+def enqueue_job(
+    state_dir: Path,
+    model_id: str,
+    *,
+    source: str,
+    mode: str,
+    destination_root: Path,
+    explicit_source: Path | None,
+    verify_hashes: bool,
+    restart: bool,
+    priority: int,
+) -> dict[str, Any]:
+    store = JobStore(state_dir, model_id)
+    store.acquire()
+    staging_root = destination_root / ".synapse-model-staging" / model_id
+    configuration = {
+        "source": source,
+        "mode": mode,
+        "destinationRoot": str(destination_root),
+        "explicitSource": str(explicit_source) if explicit_source else None,
+        "verifyHashes": verify_hashes,
+        "stagingRoot": str(staging_root),
+    }
+    try:
+        previous = store.load()
+        if previous and previous.get("state") == "running":
+            raise JobConflictError(f"job {model_id} is currently running")
+        if previous:
+            old_configuration = {key: previous.get(key) for key in configuration}
+            if old_configuration != configuration and not restart:
+                raise JobConflictError(
+                    f"queued job parameters differ for {model_id}; use --restart to replace it"
+                )
+        value = previous or {"createdAt": utc_now()}
+        value.update(configuration)
+        value.update({
+            "state": "queued",
+            "queuedAt": utc_now(),
+            "priority": priority,
+            "restartRequested": restart,
+        })
+        value.pop("error", None)
+        value.pop("progress", None)
+        store.save(value)
+        return value
+    finally:
+        store.release()
+
+
+def retry_job(state_dir: Path, model_id: str) -> dict[str, Any]:
+    store = JobStore(state_dir, model_id)
+    store.acquire()
+    try:
+        value = store.load()
+        if value is None:
+            raise SourceNotFoundError(f"no transfer job exists for {model_id}")
+        if value.get("state") == "completed":
+            raise JobConflictError(f"job {model_id} is already completed")
+        value["state"] = "queued"
+        value["queuedAt"] = utc_now()
+        value["restartRequested"] = False
+        value.pop("error", None)
+        store.save(value)
+        return value
+    finally:
+        store.release()
+
+
+def remove_job(state_dir: Path, model_id: str, *, partials: bool) -> dict[str, Any]:
+    store = JobStore(state_dir, model_id)
+    store.acquire()
+    try:
+        value = store.load()
+        if value is None:
+            raise SourceNotFoundError(f"no transfer job exists for {model_id}")
+        if value.get("state") in {"running", "pause-requested", "cancel-requested"}:
+            raise JobConflictError(f"job {model_id} must stop before it can be removed")
+        staging = Path(str(value.get("stagingRoot", ""))) if value.get("stagingRoot") else None
+        store.path.unlink(missing_ok=True)
+        if partials and staging:
+            shutil.rmtree(staging, ignore_errors=True)
+        return {"model": model_id, "removed": True, "partialsRemoved": bool(partials and staging), "stagingRoot": str(staging) if staging else None}
+    finally:
+        store.release()
+
+
+def pending_jobs(state_dir: Path) -> list[dict[str, Any]]:
+    states = {"queued", "running", "interrupted"}
+    values = [value for value in list_jobs(state_dir) if value.get("state") in states]
+    return sorted(
+        values,
+        key=lambda value: (-int(value.get("priority", 0)), str(value.get("queuedAt") or value.get("createdAt") or ""), str(value.get("model", ""))),
+    )
+
+
 def _safe_relative(value: str, label: str) -> str:
     path = Path(value)
     if path.is_absolute() or ".." in path.parts or value in ("", "."):
