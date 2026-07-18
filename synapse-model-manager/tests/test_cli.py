@@ -6,11 +6,52 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
 PROJECT = Path(__file__).resolve().parents[1]
+
+
+class ResumableHandler(BaseHTTPRequestHandler):
+    payload = b""
+    fail_first = True
+    ranges: list[int] = []
+    delay = 0.0
+    chunk_size = 64 * 1024
+
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+    def do_GET(self) -> None:
+        range_value = self.headers.get("Range")
+        offset = int(range_value.removeprefix("bytes=").split("-", 1)[0]) if range_value else 0
+        type(self).ranges.append(offset)
+        body = type(self).payload[offset:]
+        self.send_response(206 if offset else 200)
+        self.send_header("Content-Length", str(len(body)))
+        if offset:
+            self.send_header("Content-Range", f"bytes {offset}-{len(type(self).payload) - 1}/{len(type(self).payload)}")
+        self.end_headers()
+        if type(self).fail_first and not offset:
+            type(self).fail_first = False
+            self.wfile.write(body[: len(body) // 2])
+            self.wfile.flush()
+            self.connection.shutdown(1)
+            return
+        if type(self).delay:
+            try:
+                for start in range(0, len(body), type(self).chunk_size):
+                    self.wfile.write(body[start : start + type(self).chunk_size])
+                    self.wfile.flush()
+                    time.sleep(type(self).delay)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+        self.wfile.write(body)
 
 
 class ModelManagerCliTests(unittest.TestCase):
@@ -81,20 +122,23 @@ http_files = [
     def tearDown(self) -> None:
         self.temp.cleanup()
 
+    def cli_command(self, *arguments: str) -> list[str]:
+        return [
+            sys.executable,
+            "-m",
+            "synapse_model_manager.cli",
+            "--manifest-dir",
+            str(self.manifests),
+            "--state-dir",
+            str(self.state),
+            *arguments,
+        ]
+
     def run_cli(self, *arguments: str, expected: int = 0) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(PROJECT)
         result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "synapse_model_manager.cli",
-                "--manifest-dir",
-                str(self.manifests),
-                "--state-dir",
-                str(self.state),
-                *arguments,
-            ],
+            self.cli_command(*arguments),
             cwd=PROJECT,
             env=env,
             text=True,
@@ -139,6 +183,21 @@ http_files = [
         status = json.loads(self.run_cli("status", "fixture", "--json").stdout)
         self.assertTrue(status["data"]["models"][0]["validation"]["valid"])
 
+    def test_copy_install_resumes_persistent_partial(self) -> None:
+        partial = self.destination / ".synapse-model-staging/fixture/safetensors/test/model/weights.bin.part"
+        partial.parent.mkdir(parents=True)
+        partial.write_bytes(b"synapse-")
+        result = self.run_cli(
+            "install", "fixture", "--source", str(self.source), "--mode", "copy",
+            "--root", str(self.destination), "--jsonl",
+        )
+        events = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual(events[-1]["event"], "result")
+        self.assertEqual(
+            (self.destination / "safetensors/test/model/weights.bin").read_bytes(),
+            b"synapse-model-fixture\n",
+        )
+
     def test_checksum_failure_is_structured(self) -> None:
         (self.source / "safetensors/test/model/weights.bin").write_bytes(b"x" * len(b"synapse-model-fixture\n"))
         result = self.run_cli("verify", "fixture", "--source", str(self.source), "--json", expected=4)
@@ -158,6 +217,164 @@ http_files = [
             (self.destination / "gguf/test/web/model.bin").read_bytes(),
             b"web-model-fixture\n",
         )
+
+    def test_http_failure_preserves_partial_and_second_run_resumes(self) -> None:
+        ResumableHandler.payload = (b"0123456789abcdef" * 262144) + b"end"
+        ResumableHandler.fail_first = True
+        ResumableHandler.ranges = []
+        ResumableHandler.delay = 0.0
+        server = ThreadingHTTPServer(("127.0.0.1", 0), ResumableHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            digest = hashlib.sha256(ResumableHandler.payload).hexdigest()
+            port = server.server_address[1]
+            (self.manifests / "resume.toml").write_text(
+                f'''schema_version = 1
+id = "resume-fixture"
+name = "Resume Fixture"
+description = "Persistent HTTP resume test"
+product = "tests"
+default_root = "{self.destination}"
+license = "MIT"
+
+[[components]]
+id = "model"
+relative_path = "gguf/test/resume"
+source_type = "http-files"
+revision = "resume-revision"
+required = [
+  {{ path = "model.bin", size = {len(ResumableHandler.payload)}, sha256 = "{digest}" }},
+]
+http_files = [
+  {{ path = "model.bin", url = "http://127.0.0.1:{port}/model.bin", size = {len(ResumableHandler.payload)}, sha256 = "{digest}" }},
+]
+''',
+                encoding="utf-8",
+            )
+            first = self.run_cli(
+                "install", "resume-fixture", "--source", "web", "--mode", "copy",
+                "--root", str(self.destination), "--json", expected=5,
+            )
+            self.assertEqual(json.loads(first.stdout)["errors"][0]["code"], "acquisition_failed")
+            partial = self.destination / ".synapse-model-staging/resume-fixture/gguf/test/resume/model.bin.part"
+            self.assertGreater(partial.stat().st_size, 0)
+            failed_job = json.loads((self.state / "jobs/resume-fixture.json").read_text())
+            self.assertEqual(failed_job["state"], "failed")
+
+            second = self.run_cli(
+                "install", "resume-fixture", "--source", "web", "--mode", "copy",
+                "--root", str(self.destination), "--jsonl",
+            )
+            events = [json.loads(line) for line in second.stdout.splitlines()]
+            starts = [event for event in events if event["event"] == "download-started"]
+            self.assertGreater(starts[0]["resumeOffsetBytes"], 0)
+            self.assertGreater(ResumableHandler.ranges[-1], 0)
+            self.assertEqual(
+                (self.destination / "gguf/test/resume/model.bin").read_bytes(),
+                ResumableHandler.payload,
+            )
+            jobs = json.loads(self.run_cli("jobs", "resume-fixture", "--json").stdout)
+            self.assertEqual(jobs["data"]["jobs"][0]["state"], "completed")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_active_http_job_can_be_cancelled_and_resumed(self) -> None:
+        ResumableHandler.payload = b"x" * (16 * 1024 * 1024)
+        ResumableHandler.fail_first = False
+        ResumableHandler.ranges = []
+        ResumableHandler.delay = 0.005
+        server = ThreadingHTTPServer(("127.0.0.1", 0), ResumableHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            digest = hashlib.sha256(ResumableHandler.payload).hexdigest()
+            port = server.server_address[1]
+            (self.manifests / "cancel.toml").write_text(
+                f'''schema_version = 1
+id = "cancel-fixture"
+name = "Cancel Fixture"
+description = "Cooperative cancellation test"
+product = "tests"
+default_root = "{self.destination}"
+license = "MIT"
+
+[[components]]
+id = "model"
+relative_path = "gguf/test/cancel"
+source_type = "http-files"
+required = [
+  {{ path = "model.bin", size = {len(ResumableHandler.payload)}, sha256 = "{digest}" }},
+]
+http_files = [
+  {{ path = "model.bin", url = "http://127.0.0.1:{port}/model.bin", size = {len(ResumableHandler.payload)}, sha256 = "{digest}" }},
+]
+''',
+                encoding="utf-8",
+            )
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(PROJECT)
+            process = subprocess.Popen(
+                self.cli_command(
+                    "install", "cancel-fixture", "--source", "web", "--mode", "copy",
+                    "--root", str(self.destination), "--json",
+                ),
+                cwd=PROJECT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            job_path = self.state / "jobs/cancel-fixture.json"
+            partial = self.destination / ".synapse-model-staging/cancel-fixture/gguf/test/cancel/model.bin.part"
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and not partial.is_file():
+                time.sleep(0.02)
+            self.assertTrue(job_path.is_file())
+            self.assertTrue(partial.is_file())
+            conflict = self.run_cli(
+                "install", "cancel-fixture", "--source", "web", "--mode", "copy",
+                "--root", str(self.destination), "--json", expected=6,
+            )
+            self.assertEqual(json.loads(conflict.stdout)["errors"][0]["code"], "job_conflict")
+            cancelled = self.run_cli("cancel", "cancel-fixture", "--json")
+            self.assertTrue(json.loads(cancelled.stdout)["ok"])
+            stdout, stderr = process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 7, stderr + stdout)
+            self.assertEqual(json.loads(stdout)["errors"][0]["code"], "job_cancelled")
+            self.assertGreater(partial.stat().st_size, 0)
+            self.assertEqual(json.loads(job_path.read_text())["state"], "cancelled")
+
+            ResumableHandler.delay = 0.0
+            resumed = self.run_cli("resume", "cancel-fixture", "--json")
+            self.assertTrue(json.loads(resumed.stdout)["ok"])
+            self.assertGreater(ResumableHandler.ranges[-1], 0)
+            self.assertEqual(json.loads(job_path.read_text())["state"], "completed")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+            ResumableHandler.delay = 0.0
+
+    def test_unfinished_job_parameter_change_requires_restart(self) -> None:
+        result = self.run_cli(
+            "install", "web-fixture", "--source", "usb", "--mode", "copy",
+            "--root", str(self.destination), "--json", expected=3,
+        )
+        self.assertFalse(json.loads(result.stdout)["ok"])
+        other = self.root / "other-destination"
+        conflict = self.run_cli(
+            "install", "web-fixture", "--source", "web", "--mode", "copy",
+            "--root", str(other), "--json", expected=6,
+        )
+        self.assertEqual(json.loads(conflict.stdout)["errors"][0]["code"], "job_conflict")
+        restarted = self.run_cli(
+            "install", "web-fixture", "--source", "web", "--mode", "copy",
+            "--root", str(other), "--restart", "--json",
+        )
+        self.assertTrue(json.loads(restarted.stdout)["ok"])
 
     def test_jsonl_emits_events_and_final_result(self) -> None:
         result = self.run_cli(

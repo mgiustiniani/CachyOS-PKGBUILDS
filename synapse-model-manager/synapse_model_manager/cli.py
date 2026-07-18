@@ -17,8 +17,10 @@ from .core import (
     discover_roots,
     find_complete_source,
     install_manifest,
+    list_jobs,
     load_registry,
     load_state,
+    request_job_control,
     utc_now,
     validate_manifest,
 )
@@ -104,6 +106,16 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--mode", choices=("external", "copy"), default="copy")
     install.add_argument("--root", help="Destination model root for copy mode")
     install.add_argument("--skip-hash", action="store_true")
+    install.add_argument("--restart", action="store_true", help="Discard persistent partial data and restart")
+
+    jobs = subparsers.add_parser("jobs", help="List persistent transfer jobs")
+    jobs.add_argument("model", nargs="?")
+    pause = subparsers.add_parser("pause", help="Request cooperative transfer pause")
+    pause.add_argument("model")
+    resume = subparsers.add_parser("resume", help="Resume a persistent transfer job")
+    resume.add_argument("model")
+    cancel = subparsers.add_parser("cancel", help="Request cooperative transfer cancellation")
+    cancel.add_argument("model")
 
     resolve = subparsers.add_parser("resolve", help="Resolve activated component paths")
     resolve.add_argument("model")
@@ -202,6 +214,29 @@ def run_command(args: argparse.Namespace, registry: dict[str, Manifest], output:
             state_dir=state_dir,
             explicit_source=explicit,
             verify_hashes=not args.skip_hash,
+            emitter=output.event,
+            restart=args.restart,
+        )
+    if args.command == "jobs":
+        return {"jobs": list_jobs(state_dir, args.model)}
+    if args.command in {"pause", "cancel"}:
+        value = request_job_control(state_dir, args.model, args.command)
+        return {"job": value}
+    if args.command == "resume":
+        manifest = require_manifest(registry, args.model)
+        jobs = list_jobs(state_dir, args.model)
+        if not jobs:
+            raise SourceNotFoundError(f"no transfer job exists for {args.model}")
+        job = jobs[0]
+        explicit_value = job.get("explicitSource")
+        return install_manifest(
+            manifest,
+            source=str(job.get("source", "auto")),
+            mode=str(job.get("mode", "copy")),
+            destination_root=Path(str(job.get("destinationRoot", manifest.default_root))),
+            state_dir=state_dir,
+            explicit_source=Path(explicit_value) if explicit_value else None,
+            verify_hashes=bool(job.get("verifyHashes", True)),
             emitter=output.event,
         )
     if args.command == "resolve":
