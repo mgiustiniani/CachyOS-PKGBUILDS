@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+from __future__ import annotations
+import argparse, hashlib, json, os, shutil, subprocess, sys, tempfile, zipfile
+from pathlib import Path
+
+REQUIRED = (
+    "LICENSE.txt", "include/cvml-context.h", "linux/libcvml-sdk.so",
+    "linux/libcvml-face-detector.so", "linux/libcvml-facemesh.so",
+    "linux/libcvml-depth-estimation.so", "linux/cvml-face-detector.graphlib",
+    "linux/cvml-facemesh.graphlib", "linux/cvml-depth-estimation.graphlib",
+)
+
+def locate(root: Path) -> Path:
+    candidates = [root, root / "Ryzen-AI-CVML-Library"]
+    candidates.extend(path.parent for path in root.rglob("cvml-context.h") if path.parent.name == "include")
+    for candidate in candidates:
+        if all((candidate / item).is_file() for item in REQUIRED): return candidate
+    raise RuntimeError("source does not contain a complete Ryzen AI CVML Library")
+
+def digest(path: Path) -> str:
+    h=hashlib.sha256()
+    with path.open('rb') as stream:
+        for block in iter(lambda: stream.read(1024*1024), b''): h.update(block)
+    return h.hexdigest()
+
+def install(args):
+    if not args.accept_amd_cvml_eula:
+        raise RuntimeError("AMD CVML SDK license was not accepted")
+    source_value=args.source
+    source=None if source_value == 'github' else Path(source_value).expanduser().resolve()
+    if source is not None and not source.exists(): raise RuntimeError(f"source not found: {source}")
+    target=Path(args.target).expanduser()
+    with tempfile.TemporaryDirectory(prefix='synapse-cvml-import-') as td:
+        staging=Path(td)/'source'
+        if source is None:
+            repository=staging/'RyzenAI-SW'
+            subprocess.run(['git','clone','--depth','1','--filter=blob:none','--sparse','https://github.com/amd/RyzenAI-SW.git',str(repository)],check=True)
+            subprocess.run(['git','-C',str(repository),'sparse-checkout','set','Ryzen-AI-CVML-Library'],check=True)
+            subprocess.run(['git','-C',str(repository),'lfs','install','--local'],check=True)
+            subprocess.run(['git','-C',str(repository),'lfs','pull','--include=Ryzen-AI-CVML-Library/linux/**'],check=True)
+            root=locate(repository)
+        elif source.is_dir(): root=locate(source)
+        else:
+            staging.mkdir()
+            if not zipfile.is_zipfile(source): raise RuntimeError("source archive is not a ZIP file")
+            with zipfile.ZipFile(source) as z:
+                base=staging.resolve()
+                for member in z.infolist():
+                    destination=(staging/member.filename).resolve()
+                    if destination != base and base not in destination.parents:
+                        raise RuntimeError(f"unsafe archive member: {member.filename}")
+                z.extractall(staging)
+            root=locate(staging)
+        license_text=(root/'LICENSE.txt').read_text(errors='replace')
+        if 'AMD CVML SDK' not in license_text or 'SOFTWARE LICENSE AGREEMENT' not in license_text:
+            raise RuntimeError("unexpected or missing AMD CVML SDK license")
+        temporary=target.with_name(target.name+'.staging')
+        shutil.rmtree(temporary,ignore_errors=True); temporary.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copytree(root,temporary,symlinks=True)
+        manifest={"schema_version":1,"source":source_value,"files":{}}
+        for rel in REQUIRED:
+            manifest['files'][rel]=digest(temporary/rel)
+        (temporary/'SYNAPSE-IMPORT.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+        backup=target.with_name(target.name+'.old'); shutil.rmtree(backup,ignore_errors=True)
+        if target.exists(): target.rename(backup)
+        temporary.rename(target); shutil.rmtree(backup,ignore_errors=True)
+    config=Path('/etc/synapse/cvml.conf'); config.parent.mkdir(parents=True,exist_ok=True)
+    config.write_text(f"CVML_ROOT={target}\nCVML_BACKEND=NPU\n")
+    print(json.dumps({"schema_version":1,"status":"installed","target":str(target)},sort_keys=True))
+
+def main():
+    p=argparse.ArgumentParser(prog='synapse-cvml-import'); s=p.add_subparsers(dest='command',required=True)
+    i=s.add_parser('install'); i.add_argument('--source',required=True); i.add_argument('--target',default='/opt/synapse/cvml/current'); i.add_argument('--accept-amd-cvml-eula',action='store_true'); i.add_argument('--json',action='store_true')
+    a=p.parse_args()
+    try: install(a); return 0
+    except Exception as e:
+        print(json.dumps({"schema_version":1,"status":"error","error":str(e)},sort_keys=True) if a.json else f"error: {e}", file=sys.stdout if a.json else sys.stderr); return 1
+if __name__=='__main__': raise SystemExit(main())

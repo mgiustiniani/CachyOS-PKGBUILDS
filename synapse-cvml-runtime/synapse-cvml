@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+set -euo pipefail
+[[ -r /etc/synapse/cvml.conf ]] && source /etc/synapse/cvml.conf
+root=${CVML_ROOT:-/opt/synapse/cvml/current}
+backend=${CVML_BACKEND:-NPU}
+ryzen=${RYZEN_AI_VENV:-/opt/synapse/xdna/ryzen-ai/1.7.1}
+libpath="$root/linux:$root/linux/onnx/ryzen14:$ryzen/deployment/lib:$ryzen/onnxruntime/lib:/usr/lib"
+case ${1:-} in
+  doctor)
+    shift
+    missing=()
+    for f in LICENSE.txt include/cvml-context.h linux/libcvml-sdk.so linux/libcvml-face-detector.so linux/cvml-face-detector.graphlib; do [[ -f "$root/$f" ]] || missing+=("$f"); done
+    unresolved=()
+    if ((${#missing[@]}==0)); then
+      while IFS= read -r dep; do unresolved+=("$dep"); done < <(LD_LIBRARY_PATH="$libpath" ldd "$root/linux/libcvml-sdk.so" "$root/linux/libcvml-face-detector.so" 2>/dev/null | awk '/not found/{print $1}' | sort -u)
+    fi
+    status=ready; ((${#missing[@]}==0 && ${#unresolved[@]}==0)) || status=degraded
+    python - "$status" "$root" "$backend" "${missing[*]}" "${unresolved[*]}" <<'PY'
+import json,sys
+print(json.dumps({'schema_version':1,'status':sys.argv[1],'root':sys.argv[2],'configured_backend':sys.argv[3],'missing':sys.argv[4].split() if sys.argv[4] else [],'unresolved':sys.argv[5].split() if sys.argv[5] else []},sort_keys=True))
+PY
+    [[ $status == ready ]]
+    ;;
+  build-samples)
+    shift
+    [[ -d "$root/samples" ]] || { echo "CVML samples are missing" >&2; exit 1; }
+    cmake -S "$root/samples" -B "$root/samples-build" -DOPENCV_INSTALL_ROOT=/usr -DCMAKE_PREFIX_PATH="/usr;$root"
+    cmake --build "$root/samples-build" --parallel
+    ;;
+  env)
+    shift
+    export AMD_CVML_SDK_ROOT="$root" CVML_INFERENCE_BACKEND="$backend" LD_LIBRARY_PATH="$libpath${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    exec "$@"
+    ;;
+  *) echo "usage: synapse-cvml {doctor|build-samples|env COMMAND...}" >&2; exit 2;;
+esac

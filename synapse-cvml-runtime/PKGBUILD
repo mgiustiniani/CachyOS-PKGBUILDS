@@ -1,0 +1,25 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+pkgname=synapse-cvml-runtime
+pkgver=0.1.0
+pkgrel=2
+pkgdesc='License-gated AMD Ryzen AI CVML importer and diagnostics'
+arch=('x86_64')
+url='https://developer.amd.com/playbooks/cvml/'
+license=('MIT')
+backup=('etc/synapse/cvml.conf')
+depends=('bash' 'python' 'git' 'git-lfs' 'cmake' 'opencv' 'vulkan-icd-loader' 'xrt-plugin-amdxdna' 'synapse-xdna-runtime')
+source=('synapse-cvml' 'synapse-cvml-import' 'cvml.conf' 'README.md' 'LICENSE')
+sha256sums=(
+ '84cd7a5787ae0af128dc27a7830b5d2478efc608dbe0958e6a655f8d39f4300b'
+ 'ae91b7bb5b9ca2e5fc094c7eb01fa9725a2b08f9e58e28cf5761c44ce74f522f'
+ '5495a76f83267669362aa7709f2872131b36487d498e0d24283e9e410a219b1b'
+ '956ba3255c8abf69d9ac3f17d827b0d0fe61357738bb700dc7ed8fcb31a74bc3'
+ '8de71893aa802834eb243c3952c4c71f1cfe28223ee85a32d3b49aa376ff97a6'
+)
+package() {
+ install -Dm755 synapse-cvml "$pkgdir/usr/bin/synapse-cvml"
+ install -Dm755 synapse-cvml-import "$pkgdir/usr/bin/synapse-cvml-import"
+ install -Dm644 cvml.conf "$pkgdir/etc/synapse/cvml.conf"
+ install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+ install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

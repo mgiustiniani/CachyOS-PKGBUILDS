@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-only
+set -euo pipefail
+config=/etc/synapse/comfyui/config.conf
+[[ -r "$config" ]] && source "$config"
+model_root=${COMFYUI_MODEL_ROOT:-/var/lib/synapse/comfyui/models}
+output_root=${COMFYUI_OUTPUT_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/synapse/comfyui/output}
+user_root=${COMFYUI_USER_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/synapse/comfyui/user}
+temp_root=${XDG_CACHE_HOME:-$HOME/.cache}/synapse/comfyui/temp
+listen=${COMFYUI_LISTEN:-127.0.0.1}
+port=${COMFYUI_PORT:-8188}
+mkdir -p "$model_root" "$output_root" "$user_root" "$temp_root" "${XDG_CACHE_HOME:-$HOME/.cache}/synapse/comfyui"
+paths="${XDG_CACHE_HOME:-$HOME/.cache}/synapse/comfyui/extra_model_paths.yaml"
+cat >"$paths" <<EOF
+synapse_comfyui:
+  base_path: $model_root
+  checkpoints: checkpoints
+  diffusion_models: diffusion_models
+  text_encoders: text_encoders
+  clip: clip
+  clip_vision: clip_vision
+  vae: vae
+  loras: loras
+  controlnet: controlnet
+  upscale_models: upscale_models
+  embeddings: embeddings
+EOF
+export PYTHONPATH="/usr/lib/synapse-comfyui/python:/usr/lib/synapse-comfyui${PYTHONPATH:+:$PYTHONPATH}"
+export PYTORCH_HIP_ALLOC_CONF=${PYTORCH_HIP_ALLOC_CONF:-expandable_segments:True}
+exec /usr/bin/python /usr/lib/synapse-comfyui/ComfyUI/main.py \
+  --extra-model-paths-config "$paths" --output-directory "$output_root" \
+  --user-directory "$user_root" --temp-directory "$temp_root" \
+  --listen "$listen" --port "$port" \
+  --use-pytorch-cross-attention "$@"

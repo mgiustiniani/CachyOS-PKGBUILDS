@@ -1,0 +1,14 @@
+[Unit]
+Description=Synapse ComfyUI ROCm workflow server
+After=graphical-session.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/synapse-comfyui
+Restart=on-failure
+RestartSec=5
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=default.target
