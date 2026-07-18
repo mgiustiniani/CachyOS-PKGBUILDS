@@ -1,7 +1,7 @@
 pkgbase = synapse-comfyui-rocm
 	pkgdesc = Node-based ComfyUI visual generation workflows for Radeon ROCm
 	pkgver = 0.28.0
-	pkgrel = 5
+	pkgrel = 6
 	url = https://github.com/Comfy-Org/ComfyUI
 	arch = x86_64
 	license = GPL-3.0-only
@@ -43,7 +43,7 @@ pkgbase = synapse-comfyui-rocm
 	source = README.md
 	sha256sums = SKIP
 	sha256sums = d8d45a63467dfa9d6443eaa2cd069b8c3c2dc8ecfe0cb61a4513de08c9a286ed
-	sha256sums = ff2ca4bd41d4162611cec9ae9c17428c376aadb16bd167c74a4d5af850114c8f
+	sha256sums = 05601d644778627f37ac26e86397d5ec06478e91b434b6e22c2cd755935b4dbc
 	sha256sums = 17f71bf7d1fe69a35ac11b26d68b41768a0b08fa28c88899cb3cb62f25a029eb
 	sha256sums = 2c3f47244c9435d9c5cf9fb13e4806330aaf1bdd50b2ebd786101066d237341e
 	sha256sums = aaf933256cce52d58c17968e4383e4a1cc827e16701d8ccf4074f66f30b8c2a1

@@ -30,5 +30,6 @@ export PYTORCH_HIP_ALLOC_CONF=${PYTORCH_HIP_ALLOC_CONF:-expandable_segments:True
 exec /usr/bin/python /usr/lib/synapse-comfyui/ComfyUI/main.py \
   --extra-model-paths-config "$paths" --output-directory "$output_root" \
   --user-directory "$user_root" --temp-directory "$temp_root" \
+  --database-url "sqlite:///$user_root/comfyui.db" \
   --listen "$listen" --port "$port" \
   --use-pytorch-cross-attention "$@"
