@@ -194,12 +194,13 @@ def postprocess(args: argparse.Namespace) -> dict[str, Any]:
     language = args.language or payload.get("language")
     if not language or language == "auto":
         raise ValueError("alignment requires a detected or explicit language")
+    if args.diarize:
+        ensure_diarization_acceptance(args)
     result = run_alignment(
         Path(args.audio), payload, language, device, model_root,
         args.align_model, args.char_alignments,
     )
     if args.diarize:
-        ensure_diarization_acceptance(args)
         result = run_diarization(
             Path(args.audio), result, device, model_root, args.diarization_model,
             token, args.min_speakers, args.max_speakers,

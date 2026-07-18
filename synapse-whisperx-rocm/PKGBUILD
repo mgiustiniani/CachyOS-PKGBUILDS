@@ -2,7 +2,7 @@
 
 pkgname=synapse-whisperx-rocm
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Optional WhisperX alignment and diarization for XDNA Whisper transcripts'
 arch=('x86_64')
 url='https://synapseos.it'

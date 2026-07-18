@@ -1,7 +1,7 @@
 pkgbase = synapse-whisperx-rocm
 	pkgdesc = Optional WhisperX alignment and diarization for XDNA Whisper transcripts
 	pkgver = 0.1.0
-	pkgrel = 1
+	pkgrel = 2
 	url = https://synapseos.it
 	arch = x86_64
 	license = BSD-2-Clause
