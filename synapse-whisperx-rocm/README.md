@@ -25,6 +25,10 @@ Models are downloaded only after an explicit command and remain under
 
 ```sh
 synapse-whisperx download --language it --json
+
+# Preserve all languages exposed by Synapse Calamares on external storage:
+synapse-whisperx download --all-languages \
+  --model-root /path/to/models/models/pytorch/alignment/whisperx --device cpu --json
 ```
 
 ## XDNA transcription and WhisperX alignment
@@ -44,6 +48,10 @@ provide a Hugging Face token when required, and run:
 synapse-whisperx postprocess audio.wav transcript.json \
   --output diarized.json --diarize --accept-diarization-terms --json
 ```
+
+The all-language set currently covers Italian, English, German, Spanish,
+French, Portuguese, Polish, Russian, Japanese, Korean, and Chinese. It is much
+larger than a dictionary because these are acoustic forced-alignment models.
 
 The package contains code only. Alignment and diarization weights are not
 included in the package, repository, or ISO.

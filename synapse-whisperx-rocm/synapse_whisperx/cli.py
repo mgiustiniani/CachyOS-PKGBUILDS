@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 CONFIG = Path("/etc/synapse/whisperx/config.conf")
+SUPPORTED_LANGUAGES = ("it", "en", "de", "es", "fr", "pt", "pl", "ru", "ja", "ko", "zh")
 
 
 def load_config() -> dict[str, str]:
@@ -219,8 +220,16 @@ def download(args: argparse.Namespace) -> dict[str, Any]:
     model_root, device, token = runtime_settings(args)
     device_info = validate_device(device)
     download_nltk_data(model_root)
-    model, _ = load_alignment(args.language, device, model_root, args.align_model)
-    del model
+    if args.all_languages and args.align_model:
+        raise ValueError("--align-model cannot be combined with --all-languages")
+    languages = list(SUPPORTED_LANGUAGES) if args.all_languages else [args.language]
+    for language in languages:
+        model, _ = load_alignment(language, device, model_root, args.align_model)
+        del model
+        gc.collect()
+        if device == "cuda":
+            import torch
+            torch.cuda.empty_cache()
     if args.diarization:
         ensure_diarization_acceptance(args)
         from whisperx.diarize import DiarizationPipeline
@@ -233,7 +242,7 @@ def download(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "status": "ready",
-        "language": args.language,
+        "languages": languages,
         "diarization": args.diarization,
         "device": device_info,
         "model_root": str(model_root),
@@ -279,7 +288,9 @@ def build_parser() -> argparse.ArgumentParser:
     common_options(command)
 
     command = commands.add_parser("download")
-    command.add_argument("--language", required=True)
+    language = command.add_mutually_exclusive_group(required=True)
+    language.add_argument("--language", choices=SUPPORTED_LANGUAGES)
+    language.add_argument("--all-languages", action="store_true")
     command.add_argument("--align-model")
     command.add_argument("--diarization", action="store_true")
     command.add_argument("--diarization-model")
