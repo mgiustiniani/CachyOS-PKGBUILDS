@@ -37,3 +37,8 @@ glibc/glibc
 synapse-ec-su-axb35-linux/src/
 synapse-ec-su-axb35-linux/ec_su_axb35-linux/
 *.pkg.tar.zst
+
+### Downloaded build sources / artifacts (not committed) ###
+synapse-structurizr-onpremises/*.war
+__pycache__/
+*.pyc

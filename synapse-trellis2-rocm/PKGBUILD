@@ -1,0 +1,185 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+# Synapse/CachyOS integration package for TRELLIS.2 ROCm on Strix Halo.
+#
+# NOTE: packaging draft from the validated standard setup. It vendors the missing
+# Python deps and ROCm extension stack into /usr/lib/synapse-trellis2-rocm/python
+# to avoid a chain of moving *-git dependency packages.
+
+pkgname=synapse-trellis2-rocm
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Synapse TRELLIS.2 ROCm/gfx1151 integration with configurable model downloader'
+arch=('x86_64')
+url='https://github.com/Cardboard-box-a/TRELLIS.2_rocm'
+license=('MIT')
+install=synapse-trellis2-rocm.install
+backup=('etc/synapse/trellis2-rocm/models.conf')
+
+depends=(
+  'python'
+  'python-pytorch-opt-rocm'
+  'python-torchvision'
+  'python-transformers'
+  'python-tokenizers'
+  'python-huggingface-hub'
+  'python-triton'
+  'python-aotriton'
+  'python-numpy'
+  'python-scipy'
+  'python-pillow'
+  'python-opencv'
+  'python-imageio'
+  'python-imageio-ffmpeg'
+  'python-trimesh'
+  'python-safetensors'
+  'python-zstandard'
+  'python-pandas'
+  'python-tqdm'
+  'rocminfo'
+  'rocm-core'
+)
+makedepends=(
+  'gcc'
+  'cmake'
+  'ninja'
+  'python-pip'
+  'python-setuptools'
+  'python-wheel'
+  'eigen'
+  'rocm-hip-sdk'
+  'hip-runtime-amd'
+  'rocm-core'
+  'rocm-cmake'
+  'comgr'
+)
+
+_rocm_ref_commit='ee7be9e7b646eaefc761f9efc47ac96e7b9ee6ce'
+_cumesh_commit='2ef5f9d121e460d1aca9fd8cadb9264d6fa94ba4'
+_cubvh_commit='ce92267a24ef6ad7d2c8ccbc2ae2c021a6597e70'
+_flexgemm_commit='2a92675f85027f66c7108381a5c0312b7b393310'
+_ovoxel_commit='c4c8505c624c0e13a730ff1fd16e84f88837eb77'
+_nvdiffrast_commit='d29892337190f7e55f891b319d1daa6686bb681c'
+_nvdiffrec_commit='a762dedf4aa049ce777ef8f453098d95f701e6c1'
+
+source=(
+  "trellis2-rocm-${_rocm_ref_commit}.tar.gz::https://github.com/Cardboard-box-a/TRELLIS.2_rocm/archive/${_rocm_ref_commit}.tar.gz"
+  "cumesh-${_cumesh_commit}.tar.gz::https://github.com/Cardboard-box-a/CuMesh/archive/${_cumesh_commit}.tar.gz"
+  "cubvh-${_cubvh_commit}.tar.gz::https://github.com/JeffreyXiang/cubvh/archive/${_cubvh_commit}.tar.gz"
+  "flexgemm-rocm-${_flexgemm_commit}.tar.gz::https://github.com/Cardboard-box-a/FlexGEMM-rocm/archive/${_flexgemm_commit}.tar.gz"
+  "o-voxel-${_ovoxel_commit}.tar.gz::https://github.com/Cardboard-box-a/o-voxel/archive/${_ovoxel_commit}.tar.gz"
+  "nvdiffrast-hip-${_nvdiffrast_commit}.tar.gz::https://github.com/Cardboard-box-a/nvdiffrast-hip/archive/${_nvdiffrast_commit}.tar.gz"
+  "nvdiffrec-${_nvdiffrec_commit}.tar.gz::https://github.com/Cardboard-box-a/nvdiffrec/archive/${_nvdiffrec_commit}.tar.gz"
+  'models.conf'
+  'trellis2-env.sh'
+  'download_models.py'
+  'preprocess_image.py'
+  'trellis2-image-to-3d.py'
+  'apply_runtime_patches.py'
+  'trellis2-image-to-3d'
+  'trellis2-preprocess'
+  'trellis2-download-models'
+  'README.synapse.md'
+)
+sha256sums=(
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+)
+
+prepare() {
+  cd "$srcdir/TRELLIS.2_rocm-${_rocm_ref_commit}"
+
+  # Avoid broken Eigen submodule fetches; use system Eigen where the tree exists.
+  if [[ -d o-voxel/third_party ]]; then
+    rm -rf o-voxel/third_party/eigen
+    ln -s /usr/include/eigen3 o-voxel/third_party/eigen
+  fi
+
+  rm -rf "$srcdir/CuMesh-${_cumesh_commit}/third_party/cubvh"
+  cp -a "$srcdir/cubvh-${_cubvh_commit}" "$srcdir/CuMesh-${_cumesh_commit}/third_party/cubvh"
+  mkdir -p "$srcdir/CuMesh-${_cumesh_commit}/third_party/cubvh/third_party"
+  rm -rf "$srcdir/CuMesh-${_cumesh_commit}/third_party/cubvh/third_party/eigen"
+  ln -s /usr/include/eigen3 "$srcdir/CuMesh-${_cumesh_commit}/third_party/cubvh/third_party/eigen"
+
+  # Cardboard TRELLIS.2_rocm is the ROCm base tree; no Microsoft tree is packaged.
+
+  # Local model source overrides for gated DINOv3/RMBG.
+  TRELLIS2_ROOT="$srcdir/TRELLIS.2_rocm-${_rocm_ref_commit}" python "$srcdir/apply_runtime_patches.py"
+
+  for d in "CuMesh-${_cumesh_commit}" "FlexGEMM-rocm-${_flexgemm_commit}" "o-voxel-${_ovoxel_commit}" "nvdiffrast-hip-${_nvdiffrast_commit}" "nvdiffrec-${_nvdiffrec_commit}"; do
+    if [[ -d "$srcdir/$d/third_party" ]]; then
+      rm -rf "$srcdir/$d/third_party/eigen" || true
+      ln -s /usr/include/eigen3 "$srcdir/$d/third_party/eigen" || true
+    fi
+  done
+}
+
+build() {
+  local vendor="$srcdir/python-vendor"
+  rm -rf "$vendor"
+  mkdir -p "$vendor"
+
+  export BUILD_TARGET=rocm
+  export GPU_ARCHS="${GPU_ARCHS:-gfx1151}"
+  export ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
+  export MAX_JOBS="${MAX_JOBS:-8}"
+  export CXXFLAGS="${CXXFLAGS:-} -DGLOG_USE_GLOG_EXPORT"
+  export CFLAGS="${CFLAGS:-} -DGLOG_USE_GLOG_EXPORT"
+  export HIPCC_COMPILE_FLAGS_APPEND="${HIPCC_COMPILE_FLAGS_APPEND:-} --offload-arch=$GPU_ARCHS --hip-path=$ROCM_PATH -DGLOG_USE_GLOG_EXPORT"
+  export PYTHONPATH="$vendor:$srcdir/TRELLIS.2_rocm-${_rocm_ref_commit}:${PYTHONPATH:-}"
+
+  # Bundle missing Python deps in this package instead of creating many moving
+  # Arch *-git dependency packages. Model weights are still not bundled.
+  # Use --no-deps so pip does not pull the upstream CUDA/CPU torch wheel over
+  # the CachyOS ROCm PyTorch stack. Core numeric/torch deps come from pacman.
+  python -m pip install --no-cache-dir --no-deps --target "$vendor" \
+    easydict gradio==6.0.1 kornia kornia-rs timm plyfile pyfqmr lpips einops \
+    transformers==4.56.0 tokenizers==0.22.2 huggingface-hub==0.36.2 \
+    moderngl glcontext \
+    "utils3d @ https://github.com/EasternJournalist/utils3d/archive/9a4eb15e4021b67b12c460c7057d642626897ec8.tar.gz"
+
+  local ext
+  for ext in "CuMesh-${_cumesh_commit}" "FlexGEMM-rocm-${_flexgemm_commit}" "o-voxel-${_ovoxel_commit}" "nvdiffrast-hip-${_nvdiffrast_commit}" "nvdiffrec-${_nvdiffrec_commit}"; do
+    python -m pip install --no-build-isolation --no-deps --target "$vendor" "$srcdir/$ext"
+  done
+}
+
+package() {
+  local appdir="$pkgdir/usr/lib/synapse-trellis2-rocm"
+
+  install -dm755 "$appdir"
+  cp -a "$srcdir/TRELLIS.2_rocm-${_rocm_ref_commit}" "$appdir/TRELLIS.2"
+
+  # Remove VCS metadata from packaged source tree.
+  find "$appdir/TRELLIS.2" -name .git -type d -prune -exec rm -rf '{}' +
+
+  install -Dm644 "$srcdir/models.conf" "$pkgdir/etc/synapse/trellis2-rocm/models.conf"
+  install -Dm755 "$srcdir/trellis2-env.sh" "$appdir/trellis2-env.sh"
+  install -Dm755 "$srcdir/download_models.py" "$appdir/download_models.py"
+  install -Dm755 "$srcdir/preprocess_image.py" "$appdir/preprocess_image.py"
+  install -Dm755 "$srcdir/trellis2-image-to-3d.py" "$appdir/trellis2-image-to-3d.py"
+  install -Dm755 "$srcdir/apply_runtime_patches.py" "$appdir/apply_runtime_patches.py"
+  cp -a "$srcdir/python-vendor" "$appdir/python"
+
+  install -Dm755 "$srcdir/trellis2-image-to-3d" "$pkgdir/usr/bin/trellis2-image-to-3d"
+  install -Dm755 "$srcdir/trellis2-preprocess" "$pkgdir/usr/bin/trellis2-preprocess"
+  install -Dm755 "$srcdir/trellis2-download-models" "$pkgdir/usr/bin/trellis2-download-models"
+
+  install -dm755 "$pkgdir/var/lib/synapse/trellis2/models"
+  install -Dm644 "$srcdir/README.synapse.md" "$pkgdir/usr/share/doc/$pkgname/README.synapse.md"
+  install -Dm644 "$srcdir/TRELLIS.2_rocm-${_rocm_ref_commit}/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

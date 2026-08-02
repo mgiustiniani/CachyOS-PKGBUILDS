@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source /usr/lib/synapse-trellis2-rocm/trellis2-env.sh
+exec python /usr/lib/synapse-trellis2-rocm/download_models.py --conf "${TRELLIS2_MODELS_CONF:-/etc/synapse/trellis2-rocm/models.conf}" "$@"

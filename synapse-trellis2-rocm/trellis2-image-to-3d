@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source /usr/lib/synapse-trellis2-rocm/trellis2-env.sh
+exec python /usr/lib/synapse-trellis2-rocm/trellis2-image-to-3d.py "$@"
