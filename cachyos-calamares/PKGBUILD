@@ -4,7 +4,7 @@
 
 pkgname=synapse-calamares
 pkgver=3.4.1
-pkgrel=20
+pkgrel=21
 pkgdesc='Distribution-independent installer framework'
 arch=('x86_64')
 license=(GPL-3.0-or-later)
@@ -52,9 +52,10 @@ makedepends=(
   python-unidecode
   qt6-tools
 )
+_commit=fd5f7a730755a653b78eefd66b6b901f11381b21
 sha256sums=('SKIP')
-# Bootloader
-source=(calamares::"git+${url}.git#branch=cachyos-ai-integration")
+# Pin the exact Calamares source accepted for this package release.
+source=(calamares::"git+${url}.git#commit=${_commit}")
 options=('!emptydirs')
 
 prepare() {
