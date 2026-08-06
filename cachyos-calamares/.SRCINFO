@@ -1,7 +1,7 @@
 pkgbase = synapse-calamares
 	pkgdesc = Distribution-independent installer framework
 	pkgver = 3.4.1
-	pkgrel = 21
+	pkgrel = 22
 	url = https://github.com/mgiustiniani/cachyos-calamares
 	arch = x86_64
 	license = GPL-3.0-or-later
@@ -42,10 +42,11 @@ pkgbase = synapse-calamares
 	depends = upower
 	depends = yaml-cpp
 	depends = qt6-imageformats
+	depends = python-toml
 	provides = calamares
 	conflicts = calamares
 	options = !emptydirs
-	source = calamares::git+https://github.com/mgiustiniani/cachyos-calamares.git#commit=fd5f7a730755a653b78eefd66b6b901f11381b21
+	source = calamares::git+https://github.com/mgiustiniani/cachyos-calamares.git#commit=6f8fd7155a55fc6940a5fd7762515fda5ce27f11
 	sha256sums = SKIP
 
 pkgname = synapse-calamares

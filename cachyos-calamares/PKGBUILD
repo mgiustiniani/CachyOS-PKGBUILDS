@@ -4,7 +4,7 @@
 
 pkgname=synapse-calamares
 pkgver=3.4.1
-pkgrel=21
+pkgrel=22
 pkgdesc='Distribution-independent installer framework'
 arch=('x86_64')
 license=(GPL-3.0-or-later)
@@ -39,6 +39,7 @@ depends=(
   upower
   yaml-cpp
   qt6-imageformats
+  python-toml # for greetd config
 )
 makedepends=(
   boost
@@ -52,7 +53,7 @@ makedepends=(
   python-unidecode
   qt6-tools
 )
-_commit=fd5f7a730755a653b78eefd66b6b901f11381b21
+_commit=6f8fd7155a55fc6940a5fd7762515fda5ce27f11
 sha256sums=('SKIP')
 # Pin the exact Calamares source accepted for this package release.
 source=(calamares::"git+${url}.git#commit=${_commit}")
