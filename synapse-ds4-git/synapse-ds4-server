@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config=${DS4_CONFIG:-/etc/ds4/config}
+if [[ -r "$config" ]]; then
+    # The file is root-owned package/Calamares policy, not user input.
+    # shellcheck disable=SC1090
+    source "$config"
+fi
+
+: "${MODEL_PATH:?MODEL_PATH is required in /etc/ds4/config}"
+: "${SERVER_HOST:?SERVER_HOST is required in /etc/ds4/config}"
+: "${SERVER_PORT:?SERVER_PORT is required in /etc/ds4/config}"
+: "${SERVER_CTX:?SERVER_CTX is required in /etc/ds4/config}"
+: "${SERVER_TOKENS:?SERVER_TOKENS is required in /etc/ds4/config}"
+
+mode=run
+if [[ ${1:-} == --dry-run ]]; then
+    mode=dry-run
+    shift
+fi
+if (( $# )); then
+    printf 'synapse-ds4-server: unsupported argument: %s\n' "$1" >&2
+    exit 2
+fi
+
+if [[ $mode == run && ! -f $MODEL_PATH ]]; then
+    printf 'synapse-ds4-server: verified model is not available: %s\n' "$MODEL_PATH" >&2
+    exit 3
+fi
+
+launcher=${DS4_LAUNCHER:-/usr/bin/ds4-launcher}
+profile=${DS4_LAUNCHER_PROFILE:-synapse-ds4-server}
+command=(
+    "$launcher" ds4-server
+    --profile "$profile"
+    --no-prompt
+    --set "MODEL=$MODEL_PATH"
+    --set "HOST=$SERVER_HOST"
+    --set "HTTP_PORT=$SERVER_PORT"
+    --set "CTX=$SERVER_CTX"
+    --set "TOKENS=$SERVER_TOKENS"
+    --set "POWER=${POWER:-100}"
+    --set "KV_DIR=${SERVER_KV_DIR:-/var/lib/ds4/kv/server}"
+    --set "KV_MB=${SERVER_KV_MB:-8192}"
+)
+if [[ -n ${DS4_LAUNCHER_PROFILES:-} ]]; then
+    command+=(--profiles "$DS4_LAUNCHER_PROFILES")
+fi
+
+if [[ $mode == dry-run ]]; then
+    command+=(--dry-run)
+else
+    command+=(--yes)
+fi
+
+if [[ -n ${MTP_PATH:-} && -f ${MTP_PATH:-} ]]; then
+    command+=(-- --mtp "$MTP_PATH" --mtp-draft "${MTP_DRAFT_TOKENS:-2}")
+fi
+
+exec "${command[@]}"

@@ -1,0 +1,56 @@
+# Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
+
+pkgname=synapse-ds4-launcher
+pkgver=0.1.0.r0.g1aa36cd
+pkgrel=1
+pkgdesc='Synapse profile launcher for DS4 inference executables'
+arch=('x86_64' 'aarch64')
+url='https://github.com/mgiustiniani/CachyOS-PKGBUILDS'
+license=('MIT')
+depends=('glibc')
+makedepends=('gcc')
+provides=('ds4-launcher')
+conflicts=('ds4-launcher')
+backup=('etc/ds4-launcher/profiles.conf')
+_source_commit=1aa36cd899ce0da0101fbb59ec2567fd97ffbdd6
+source=(
+  'ds4-launcher.c'
+  'test_cli.sh'
+  'test_system_profile.sh'
+  'synapse-ds4-server.profile'
+  'README.md'
+  'README.upstream.md'
+  'LICENSE'
+)
+sha256sums=(
+  'b35a76674f3ced04e04baff4c5340355c9d2896813dc919fd8e6e1d1bb8dd5ec'
+  'f04d092dedebdab661c2c4eda5b416e1ee66215d13fbf1189fb33dbd8c961186'
+  'cbc8c572b934b97dc6d536044f8f7dd63f45ae5ec84638959545002a02c375f9'
+  '85ab7d25f9ea134639fb6ecca1472b8687a050cc50ad384b1597488fe8771a59'
+  '83b979ba79bbcc9d735f497cbc461846b9a1b86f9ad26b2076399cea14d120b7'
+  'e229f8773ae5a591d551d2e1836cf36db6206be1dc19990dd7e77179ae03aaf0'
+  '2f88d98ebf91cf12c7eb63cedd848800b3c05b5dc64d77f093f8063cdb71de09'
+)
+
+build() {
+  "${CC:-cc}" ${CPPFLAGS} ${CFLAGS} -std=c99 \
+    -o ds4-launcher ds4-launcher.c ${LDFLAGS}
+}
+
+check() {
+  sh test_cli.sh "$srcdir/ds4-launcher"
+  sh test_system_profile.sh "$srcdir/ds4-launcher" "$srcdir/synapse-ds4-server.profile"
+}
+
+package() {
+  install -Dm755 ds4-launcher "$pkgdir/usr/bin/ds4-launcher"
+  install -Dm644 synapse-ds4-server.profile \
+    "$pkgdir/etc/ds4-launcher/profiles.conf"
+  install -Dm644 synapse-ds4-server.profile \
+    "$pkgdir/usr/share/synapse-ds4-launcher/profiles/synapse-ds4-server.conf"
+  install -Dm644 README.md README.upstream.md \
+    -t "$pkgdir/usr/share/doc/synapse-ds4-launcher/"
+  install -Dm644 LICENSE \
+    "$pkgdir/usr/share/licenses/synapse-ds4-launcher/LICENSE"
+  printf '%s\n' "$_source_commit" > "$pkgdir/usr/share/doc/synapse-ds4-launcher/source-commit"
+}

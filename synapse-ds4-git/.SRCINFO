@@ -1,0 +1,35 @@
+pkgbase = synapse-ds4-git
+	pkgdesc = Synapse DeepSeek 4 inference engine — ROCm Strix Halo git build
+	pkgver = 0.0.0
+	pkgrel = 2
+	url = https://github.com/antirez/ds4
+	arch = x86_64
+	license = LicenseRef-Antirez-DS4
+	makedepends = git
+	makedepends = gcc
+	makedepends = hipcc
+	makedepends = comgr
+	depends = bash
+	depends = hipblas
+	depends = hipblaslt
+	depends = rocblas
+	depends = rocwmma
+	depends = rocminfo
+	depends = rocm-smi-lib
+	depends = synapse-ds4-launcher>=0.1.0
+	depends = synapse-model-manager>=0.4.0
+	provides = ds4
+	provides = ds4-git
+	conflicts = ds4
+	conflicts = ds4-git
+	replaces = ds4-git
+	backup = etc/ds4/config
+	backup = etc/ds4/server.conf
+	source = ds4::git+https://github.com/antirez/ds4.git
+	source = synapse-ds4-server
+	source = test_synapse_ds4_server.sh
+	sha256sums = SKIP
+	sha256sums = 4cc1878b1f9556434c7a31eaf7fdd6ecd7d2dc25a7c3de3a8a7019172fd8fb1c
+	sha256sums = 1b180ceaeec788134da590c15848ae511e7f93c970e0f743c49db6632f9410c1
+
+pkgname = synapse-ds4-git

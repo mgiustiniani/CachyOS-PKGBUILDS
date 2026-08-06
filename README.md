@@ -27,6 +27,14 @@ To build and install a package using one of the PKGBUILD scripts in this reposit
 3. Build the package: `makepkg -si`
 4. Install the package: `sudo pacman -U <packagename>.pkg.tar.zst`
 
+## Synapse package naming policy
+
+Packages built or assembled by the Synapse project from Git/VCS or source snapshots must use a `synapse-` package-name prefix. This is a publication contract: `synapse-pacman-repository` discovers package names rather than directory names and only selects `pkgname` values beginning with `synapse`.
+
+Installed commands and upstream compatibility names may remain unprefixed through normal package payloads and `provides=()`. For example, `synapse-ds4-launcher` installs `/usr/bin/ds4-launcher`, while `synapse-ds4-git` provides `ds4` and replaces the former `ds4-git` package.
+
+Binary packages already supplied and maintained by the base CachyOS/Arch repositories are not renamed solely for this policy.
+
 ## Contributions
 
 If you would like to contribute to CachyOS PKGBUILDS, please fork this repository and submit a pull request with your changes. Please be sure to follow the [ArchLinux Packaging Guidelines](https://wiki.archlinux.org/title/Arch_package_guidelines) when creating or modifying PKGBUILD scripts.

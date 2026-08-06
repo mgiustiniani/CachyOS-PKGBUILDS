@@ -1,19 +1,39 @@
 # Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
 # Contributor: Salvatore Sanfilippo <antirez@gmail.com> (upstream author)
 
-pkgname=ds4-git
+pkgname=synapse-ds4-git
 pkgver=0.0.0
-pkgrel=1
-pkgdesc='DeepSeek 4 (DS4) inference engine by antirez — ROCm Strix Halo edition (git version)'
+pkgrel=2
+pkgdesc='Synapse DeepSeek 4 inference engine — ROCm Strix Halo git build'
 arch=('x86_64')
 url='https://github.com/antirez/ds4'
 license=('LicenseRef-Antirez-DS4')
-depends=('hipblas' 'hipblaslt' 'rocblas' 'rocwmma' 'rocminfo' 'rocm-smi-lib')
+depends=(
+    'bash'
+    'hipblas'
+    'hipblaslt'
+    'rocblas'
+    'rocwmma'
+    'rocminfo'
+    'rocm-smi-lib'
+    'synapse-ds4-launcher>=0.1.0'
+    'synapse-model-manager>=0.4.0'
+)
 makedepends=('git' 'gcc' 'hipcc' 'comgr')
-provides=('ds4')
-conflicts=('ds4')
-source=('ds4::git+https://github.com/antirez/ds4.git')
-sha256sums=('SKIP')
+provides=('ds4' 'ds4-git')
+conflicts=('ds4' 'ds4-git')
+replaces=('ds4-git')
+backup=('etc/ds4/config' 'etc/ds4/server.conf')
+source=(
+    'ds4::git+https://github.com/antirez/ds4.git'
+    'synapse-ds4-server'
+    'test_synapse_ds4_server.sh'
+)
+sha256sums=(
+    'SKIP'
+    '4cc1878b1f9556434c7a31eaf7fdd6ecd7d2dc25a7c3de3a8a7019172fd8fb1c'
+    '1b180ceaeec788134da590c15848ae511e7f93c970e0f743c49db6632f9410c1'
+)
 
 prepare() {
     cd "$srcdir"
@@ -51,7 +71,9 @@ build() {
 
 check() {
     cd "$srcdir/ds4"
-    ./ds4-eval --self-test-extractors || true
+    ./ds4-eval --self-test-extractors
+    bash -n "$srcdir/synapse-ds4-server"
+    sh "$srcdir/test_synapse_ds4_server.sh" "$srcdir/synapse-ds4-server"
 }
 
 package() {
@@ -79,22 +101,25 @@ package() {
 # DS4 configuration — sourced by wrapper scripts
 # Edit this file to change default settings
 
-# Model path (GGUF file)
-MODEL_PATH=/var/lib/ds4/ds4flash.gguf
+# Verified model paths managed by synapse-model-manager.
+MODEL_BUNDLE=ds4-q2-imatrix
+MODEL_PATH=/var/lib/synapse/models/gguf/deepseek4-flash-284B-GGUF/DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf
 
-# MTP speculative decoding model (optional)
-# Download with: ds4-download-model mtp
-MTP_PATH=
+# MTP speculative decoding model (optional).
+MTP_PATH=/var/lib/synapse/models/gguf/deepseek4-flash-284B-GGUF/DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf
 MTP_DRAFT_TOKENS=2
 
 # ROCm backend
 BACKEND=rocm
+POWER=100
 
 # Server settings
 SERVER_HOST=127.0.0.1
 SERVER_PORT=8000
 SERVER_CTX=100000
-SERVER_TOKENS=393216
+SERVER_TOKENS=30000
+SERVER_KV_DIR=/var/lib/ds4/kv/server
+SERVER_KV_MB=8192
 
 # Generation defaults
 TEMPERATURE=1.0
@@ -104,18 +129,22 @@ THINK=high
 CONFIGEOF
 
     cat > "$pkgdir/etc/ds4/server.conf" <<'SERVEREOF'
-# ds4-server configuration
-# Overrides /etc/ds4/config for server-specific settings
+# Human-readable ds4-server policy reference.
+# The service consumes /etc/ds4/config through synapse-ds4-server.
+model_bundle=ds4-q2-imatrix
+model_path=/var/lib/synapse/models/gguf/deepseek4-flash-284B-GGUF/DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf
 host=127.0.0.1
 port=8000
 ctx=100000
-tokens=393216
+tokens=30000
+kv_dir=/var/lib/ds4/kv/server
+kv_mb=8192
 quality=true
 cors=true
 
 # MTP speculative decoding (optional)
-# mtp_path=/var/lib/ds4/DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf
-# mtp_draft=2
+mtp_path=/var/lib/synapse/models/gguf/deepseek4-flash-284B-GGUF/DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf
+mtp_draft=2
 SERVEREOF
 
     # ── Systemd service ───────────────────────────────────────
@@ -128,19 +157,15 @@ Wants=network.target
 
 [Service]
 Type=simple
-# Load config
 EnvironmentFile=/etc/ds4/config
-ExecStart=/usr/bin/ds4-server \
-    --model ${MODEL_PATH:-/var/lib/ds4/ds4flash.gguf} \
-    --host ${SERVER_HOST:-127.0.0.1} \
-    --port ${SERVER_PORT:-8000} \
-    --ctx ${SERVER_CTX:-100000} \
-    --tokens ${SERVER_TOKENS:-393216} \
-    --cors \
-    ${MTP_PATH:+--mtp $MTP_PATH --mtp-draft ${MTP_DRAFT_TOKENS:-2}}
+ExecStartPre=/usr/bin/synapse-ds4-server --dry-run
+ExecStart=/usr/bin/synapse-ds4-server
 Restart=on-failure
-RestartSec=10
+RestartSec=60
 User=root
+RuntimeDirectory=ds4
+StateDirectory=ds4
+WorkingDirectory=/var/lib/ds4
 # ROCm environment
 Environment=HSA_ENABLE_GPU_RECOVERY=1
 Environment=HSA_OVERRIDE_GFX_VERSION=1151
@@ -162,11 +187,11 @@ fi
 
 # Build args
 ARGS=()
-ARGS+=(--model "${MODEL_PATH:-/var/lib/ds4/ds4flash.gguf}")
+ARGS+=(--model "${MODEL_PATH:-/var/lib/synapse/models/gguf/deepseek4-flash-284B-GGUF/DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf}")
 ARGS+=(--backend "${BACKEND:-rocm}")
 
 # MTP speculative decoding
-if [ -n "${MTP_PATH:-}" ]; then
+if [ -n "${MTP_PATH:-}" ] && [ -f "$MTP_PATH" ]; then
     ARGS+=(--mtp "$MTP_PATH")
     ARGS+=(--mtp-draft "${MTP_DRAFT_TOKENS:-2}")
 fi
@@ -174,15 +199,16 @@ fi
 exec /usr/bin/ds4 "${ARGS[@]}" "$@"
 WRAPPEREOF
     chmod 755 "$pkgdir/usr/bin/ds4-run"
+    install -Dm755 "$srcdir/synapse-ds4-server" "$pkgdir/usr/bin/synapse-ds4-server"
 
-    # ── Model data directory ──────────────────────────────────
-    mkdir -p "$pkgdir/var/lib/ds4"
+    # ── Model and disk-KV state directories ───────────────────
+    install -dm755 "$pkgdir/var/lib/ds4/kv/server"
 
     # ── Documentation ─────────────────────────────────────────
-    install -Dm644 STRIXHALO.md -t "$pkgdir/usr/share/doc/ds4/"
-    install -Dm644 README.md -t "$pkgdir/usr/share/doc/ds4/"
-    install -Dm644 MODEL_CARD.md -t "$pkgdir/usr/share/doc/ds4/"
-    install -Dm644 AGENT.md -t "$pkgdir/usr/share/doc/ds4/"
-    install -Dm644 CONTRIBUTING.md -t "$pkgdir/usr/share/doc/ds4/"
-    install -Dm644 LICENSE -t "$pkgdir/usr/share/licenses/ds4/"
+    install -Dm644 STRIXHALO.md -t "$pkgdir/usr/share/doc/synapse-ds4-git/"
+    install -Dm644 README.md -t "$pkgdir/usr/share/doc/synapse-ds4-git/"
+    install -Dm644 MODEL_CARD.md -t "$pkgdir/usr/share/doc/synapse-ds4-git/"
+    install -Dm644 AGENT.md -t "$pkgdir/usr/share/doc/synapse-ds4-git/"
+    install -Dm644 CONTRIBUTING.md -t "$pkgdir/usr/share/doc/synapse-ds4-git/"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/synapse-ds4-git/LICENSE"
 }
