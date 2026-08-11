@@ -52,7 +52,8 @@ build() {
     'comfyui-workflow-templates-core==0.3.272' \
     'comfyui-workflow-templates-json==0.1.6' \
     'comfy-kitchen==0.2.20' 'comfy-aimdo==0.4.10' 'simpleeval>=1.0.0' \
-    'kornia>=0.7.1' 'kornia-rs>=0.1.9' 'spandrel' 'PyOpenGL>=3.1.8' 'comfy-angle'
+    'kornia>=0.7.1' 'kornia-rs>=0.1.9' 'spandrel' 'PyOpenGL>=3.1.8' 'comfy-angle' \
+    'transformers' 'tokenizers==0.22.0' 'huggingface_hub'
   rm -rf "$vendor/bin" "$vendor/.lock"
 }
 
