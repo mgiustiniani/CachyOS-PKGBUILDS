@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""Validate the system ROCm/PyTorch ABI without modifying the host."""
+from __future__ import annotations
+
+import argparse
+import ctypes
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+from typing import Any
+
+MINIMUM_GLIBC = (2, 44)
+DEFAULT_ROCM_ROOT = Path("/opt/rocm")
+
+
+def version_tuple(value: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", value))
+
+
+def glibc_probe() -> dict[str, Any]:
+    try:
+        libc = ctypes.CDLL(None)
+        get_version = libc.gnu_get_libc_version
+        get_version.restype = ctypes.c_char_p
+        value = get_version().decode("ascii", errors="replace")
+        compatible = version_tuple(value) >= MINIMUM_GLIBC
+        return {
+            "ok": compatible,
+            "version": value,
+            "minimum": ".".join(map(str, MINIMUM_GLIBC)),
+            "error": None if compatible else f"glibc {value} is older than 2.44",
+        }
+    except Exception as exc:  # pragma: no cover - host ABI failure
+        return {"ok": False, "version": None, "minimum": "2.44", "error": str(exc)}
+
+
+def comgr_probe(rocm_root: Path) -> dict[str, Any]:
+    candidates = (
+        rocm_root / "lib/libamd_comgr.so.3",
+        rocm_root / "lib/libamd_comgr.so",
+        Path("/usr/lib/libamd_comgr.so.3"),
+    )
+    existing = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if existing is None:
+        return {"ok": False, "path": None, "error": "libamd_comgr was not found"}
+    try:
+        ctypes.CDLL(str(existing), mode=os.RTLD_LOCAL | os.RTLD_LAZY)
+    except OSError as exc:
+        return {"ok": False, "path": str(existing), "error": str(exc)}
+    return {"ok": True, "path": str(existing), "error": None}
+
+
+def command_probe(command: list[str], timeout: int = 30) -> dict[str, Any]:
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "returncode": None, "stdout": "", "stderr": str(exc)}
+    return {
+        "ok": result.returncode == 0,
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+    }
+
+
+def rocminfo_probe() -> dict[str, Any]:
+    result = command_probe(["rocminfo"])
+    agents = sorted(set(re.findall(r"\bName:\s+(gfx[0-9a-z]+)\b", result.pop("stdout", ""))))
+    stderr = result.get("stderr", "").strip()
+    result["stderr"] = stderr or None
+    result["agents"] = agents
+    result["ok"] = bool(result["ok"] and agents)
+    if not result["ok"] and not result["stderr"]:
+        result["stderr"] = "rocminfo did not report a gfx agent"
+    return result
+
+
+def torch_probe() -> dict[str, Any]:
+    probe = r'''
+import json
+import torch
+available = bool(torch.cuda.is_available() and torch.version.hip)
+properties = torch.cuda.get_device_properties(0) if available else None
+print(json.dumps({
+    "ok": available,
+    "version": torch.__version__,
+    "hip": torch.version.hip,
+    "available": available,
+    "device": torch.cuda.get_device_name(0) if available else None,
+    "arch": getattr(properties, "gcnArchName", None) if properties else None,
+}))
+'''
+    result = command_probe([sys.executable, "-c", probe], timeout=60)
+    if not result["ok"]:
+        return {
+            "ok": False,
+            "version": None,
+            "hip": None,
+            "available": False,
+            "device": None,
+            "arch": None,
+            "error": (result.get("stderr") or "PyTorch ROCm probe failed").strip(),
+            "returncode": result.get("returncode"),
+        }
+    try:
+        payload = json.loads(result["stdout"])
+    except json.JSONDecodeError as exc:
+        return {"ok": False, "error": f"invalid PyTorch probe output: {exc}"}
+    payload["error"] = None if payload.get("ok") else "PyTorch did not expose a HIP device"
+    return payload
+
+
+def device_probe() -> dict[str, Any]:
+    paths = (Path("/dev/kfd"), Path("/dev/dri/renderD128"))
+    entries = {
+        str(path): {"exists": path.exists(), "readable": os.access(path, os.R_OK), "writable": os.access(path, os.W_OK)}
+        for path in paths
+    }
+    return {"ok": all(item["exists"] and item["readable"] and item["writable"] for item in entries.values()), "paths": entries}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Validate the Synapse ROCm system runtime")
+    parser.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    parser.add_argument(
+        "--rocm-root",
+        default=os.environ.get("ROCM_PATH", str(DEFAULT_ROCM_ROOT)),
+        help="ROCm installation root (default: ROCM_PATH or /opt/rocm)",
+    )
+    args = parser.parse_args()
+
+    checks = {
+        "glibc": glibc_probe(),
+        "comgr": comgr_probe(Path(args.rocm_root)),
+        "devices": device_probe(),
+        "rocminfo": rocminfo_probe(),
+        "pytorch": torch_probe(),
+    }
+    ready = all(check.get("ok", False) for check in checks.values())
+    payload = {
+        "schema_version": 1,
+        "status": "ready" if ready else "degraded",
+        "rocm_root": args.rocm_root,
+        "checks": checks,
+    }
+    print(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2 if args.pretty else None))
+    return 0 if ready else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,29 +1,87 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
+from __future__ import annotations
+
 import json
 import os
-import pathlib
+from pathlib import Path
+import re
+import subprocess
 import sys
 
-try:
-    import torch
-    hip = torch.version.hip
-    gpu = torch.cuda.is_available() and bool(hip)
-    device = torch.cuda.get_device_name(0) if gpu else None
-except Exception as exc:
-    hip = None
-    gpu = False
-    device = None
-    error = str(exc)
-root = pathlib.Path(os.environ.get("COMFYUI_MODEL_ROOT", "/var/lib/synapse/comfyui/models"))
-result = {
-    "schema_version": 1,
-    "status": "ready" if gpu and pathlib.Path("/usr/lib/synapse-comfyui/ComfyUI/main.py").is_file() else "degraded",
-    "rocm": {"available": gpu, "hip": hip, "device": device},
-    "runtime": "/usr/lib/synapse-comfyui/ComfyUI",
-    "model_root": str(root),
-    "model_root_exists": root.is_dir(),
-}
-if 'error' in locals(): result["error"] = error
-print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-sys.exit(0 if result["status"] == "ready" else 1)
+APP = Path(os.environ.get("COMFYUI_APP_ROOT", "/usr/lib/synapse-comfyui/ComfyUI"))
+H3_FILES = (
+    APP / "comfy/ldm/minimax/model.py",
+    APP / "comfy/ldm/minimax/vae.py",
+    APP / "comfy/ldm/minimax/audio_vae.py",
+    APP / "comfy/text_encoders/minimax.py",
+    APP / "comfy_extras/nodes_minimax_h3.py",
+)
+
+
+def rocm_status() -> dict:
+    try:
+        result = subprocess.run(
+            ["synapse-rocm-doctor"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"status": "degraded", "error": str(exc)}
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {
+            "status": "degraded",
+            "error": (result.stderr or result.stdout or "invalid synapse-rocm-doctor output").strip(),
+        }
+    if result.returncode and not payload.get("status"):
+        payload["status"] = "degraded"
+    return payload
+
+
+def comfyui_version() -> str | None:
+    path = APP / "comfyui_version.py"
+    try:
+        match = re.search(r'^__version__\s*=\s*["\u0027]([^"\u0027]+)', path.read_text(encoding="utf-8"), re.MULTILINE)
+    except OSError:
+        return None
+    return match.group(1) if match else None
+
+
+def main() -> int:
+    root = Path(os.environ.get("COMFYUI_MODEL_ROOT", "/var/lib/synapse/comfyui/models"))
+    runtime_present = (APP / "main.py").is_file()
+    h3_missing = [str(path.relative_to(APP)) for path in H3_FILES if not path.is_file()]
+    rocm = rocm_status()
+    pytorch = rocm.get("checks", {}).get("pytorch", {})
+    ready = runtime_present and not h3_missing and rocm.get("status") == "ready"
+    result = {
+        "schema_version": 2,
+        "status": "ready" if ready else "degraded",
+        "comfyui": {
+            "version": comfyui_version(),
+            "runtime": str(APP),
+            "runtime_present": runtime_present,
+            "minimax_h3_native": not h3_missing,
+            "minimax_h3_missing": h3_missing,
+        },
+        "rocm": {
+            "status": rocm.get("status", "degraded"),
+            "hip": pytorch.get("hip"),
+            "device": pytorch.get("device"),
+            "arch": pytorch.get("arch"),
+            "error": rocm.get("error"),
+            "checks": rocm.get("checks", {}),
+        },
+        "model_root": str(root),
+        "model_root_exists": root.is_dir(),
+    }
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    return 0 if ready else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

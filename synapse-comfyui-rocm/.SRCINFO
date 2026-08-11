@@ -1,7 +1,7 @@
 pkgbase = synapse-comfyui-rocm
 	pkgdesc = Node-based ComfyUI visual generation workflows for Radeon ROCm
-	pkgver = 0.28.0
-	pkgrel = 8
+	pkgver = 0.31.0.r9.g2a68ce33b
+	pkgrel = 1
 	url = https://github.com/Comfy-Org/ComfyUI
 	arch = x86_64
 	license = GPL-3.0-only
@@ -9,12 +9,18 @@ pkgbase = synapse-comfyui-rocm
 	makedepends = uv
 	depends = bash
 	depends = python
-	depends = python-pytorch-opt-rocm
+	depends = synapse-rocm-runtime>=7.2.4
+	depends = python-pytorch-opt-rocm>=2.13.0
 	depends = python-torchvision
 	depends = synapse-python-torchaudio-rocm
 	depends = python-numpy
 	depends = python-transformers
 	depends = python-tokenizers
+	depends = python-huggingface-hub
+	depends = python-typer
+	depends = python-regex
+	depends = python-packaging
+	depends = python-fsspec
 	depends = python-sentencepiece
 	depends = python-safetensors
 	depends = python-aiohttp
@@ -32,10 +38,9 @@ pkgbase = synapse-comfyui-rocm
 	depends = python-pydantic
 	depends = python-pydantic-settings
 	depends = python-blake3
-	depends = rocm-core
 	depends = synapse-model-manager>=0.4.0
 	backup = etc/synapse/comfyui/config.conf
-	source = ComfyUI::git+https://github.com/Comfy-Org/ComfyUI.git#commit=700821e1364eaab0e8f21c538a2131719fec57bf
+	source = ComfyUI::git+https://github.com/Comfy-Org/ComfyUI.git#commit=2a68ce33b4c9ea6ee4283e618a74560cefb32694
 	source = config.conf
 	source = synapse-comfyui
 	source = synapse-comfyui-doctor
@@ -49,11 +54,11 @@ pkgbase = synapse-comfyui-rocm
 	source = z-image-turbo-api.json
 	sha256sums = SKIP
 	sha256sums = aef3fed890424f08dc1b2265033e6905cc82035f57b1d167c14f70fbda64fa83
-	sha256sums = 460dd7befabf99909e82fdb4e912a99aeeaf2653cc2779be725969ff500d131a
-	sha256sums = 17f71bf7d1fe69a35ac11b26d68b41768a0b08fa28c88899cb3cb62f25a029eb
+	sha256sums = 2177e08acbc20d8415798b6756c22f413fe5594bcff18d3e046eda8eaeee6223
+	sha256sums = 95b09f4d97917d5a87dc1d0815f434cb54d274dc56a0f738ac2f4749a47d8818
 	sha256sums = 2c3f47244c9435d9c5cf9fb13e4806330aaf1bdd50b2ebd786101066d237341e
 	sha256sums = aaf933256cce52d58c17968e4383e4a1cc827e16701d8ccf4074f66f30b8c2a1
-	sha256sums = 785226732b4b4c1587173a66c3e082da0cd9f76f15024fd503594acc35530e38
+	sha256sums = 79fe9973b9f195098bb444d95f6e3b94bba5b09a48895d52573d3f903d897c3e
 	sha256sums = 41833642db6ee6e978a1b200d0014a6d14f063e330d17f3b1dd7c811b3e90c5e
 	sha256sums = 66629f2988092c6dc9d8ebe280baa07912d3f1653e6de6f1a027a03efa0886a9
 	sha256sums = a0e1d330ea063128d1406842666f58305fb10199906bd161a064962c14cf2bce

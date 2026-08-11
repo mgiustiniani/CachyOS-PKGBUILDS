@@ -1,8 +1,8 @@
 # Maintainer: Mario Giustiniani <mariogiustiniani@gmail.com>
 
 pkgname=synapse-comfyui-rocm
-pkgver=0.28.0
-pkgrel=8
+pkgver=0.31.0.r9.g2a68ce33b
+pkgrel=1
 pkgdesc='Node-based ComfyUI visual generation workflows for Radeon ROCm'
 arch=('x86_64')
 url='https://github.com/Comfy-Org/ComfyUI'
@@ -10,18 +10,21 @@ license=('GPL-3.0-only')
 backup=('etc/synapse/comfyui/config.conf')
 
 depends=(
-  'bash' 'python' 'python-pytorch-opt-rocm' 'python-torchvision'
+  'bash' 'python' 'synapse-rocm-runtime>=7.2.4'
+  'python-pytorch-opt-rocm>=2.13.0' 'python-torchvision'
   'synapse-python-torchaudio-rocm' 'python-numpy' 'python-transformers'
-  'python-tokenizers' 'python-sentencepiece' 'python-safetensors'
+  'python-tokenizers' 'python-huggingface-hub' 'python-typer' 'python-regex'
+  'python-packaging' 'python-fsspec' 'python-sentencepiece' 'python-safetensors'
   'python-aiohttp' 'python-yarl' 'python-yaml' 'python-pillow' 'python-scipy'
   'python-tqdm' 'python-psutil' 'python-alembic' 'python-sqlalchemy'
   'python-filelock' 'python-av' 'python-requests' 'python-pydantic'
-  'python-pydantic-settings' 'python-blake3' 'rocm-core'
+  'python-pydantic-settings' 'python-blake3'
   'synapse-model-manager>=0.4.0'
 )
 makedepends=('git' 'uv')
 
-_comfy_commit='700821e1364eaab0e8f21c538a2131719fec57bf'
+# v0.31.0 plus the native MiniMax H3 fixes through the optimized H3 VAE.
+_comfy_commit='2a68ce33b4c9ea6ee4283e618a74560cefb32694'
 source=(
   "ComfyUI::git+https://github.com/Comfy-Org/ComfyUI.git#commit=${_comfy_commit}"
   'config.conf' 'synapse-comfyui' 'synapse-comfyui-doctor' 'synapse-comfyui.service' 'sitecustomize.py' 'README.md'
@@ -31,11 +34,11 @@ source=(
 sha256sums=(
   'SKIP'
   'aef3fed890424f08dc1b2265033e6905cc82035f57b1d167c14f70fbda64fa83'
-  '460dd7befabf99909e82fdb4e912a99aeeaf2653cc2779be725969ff500d131a'
-  '17f71bf7d1fe69a35ac11b26d68b41768a0b08fa28c88899cb3cb62f25a029eb'
+  '2177e08acbc20d8415798b6756c22f413fe5594bcff18d3e046eda8eaeee6223'
+  '95b09f4d97917d5a87dc1d0815f434cb54d274dc56a0f738ac2f4749a47d8818'
   '2c3f47244c9435d9c5cf9fb13e4806330aaf1bdd50b2ebd786101066d237341e'
   'aaf933256cce52d58c17968e4383e4a1cc827e16701d8ccf4074f66f30b8c2a1'
-  '785226732b4b4c1587173a66c3e082da0cd9f76f15024fd503594acc35530e38'
+  '79fe9973b9f195098bb444d95f6e3b94bba5b09a48895d52573d3f903d897c3e'
   '41833642db6ee6e978a1b200d0014a6d14f063e330d17f3b1dd7c811b3e90c5e'
   '66629f2988092c6dc9d8ebe280baa07912d3f1653e6de6f1a027a03efa0886a9'
   'a0e1d330ea063128d1406842666f58305fb10199906bd161a064962c14cf2bce'
@@ -47,14 +50,31 @@ build() {
   local vendor="$srcdir/python-vendor"
   rm -rf "$vendor" && mkdir -p "$vendor"
   UV_LINK_MODE=copy uv pip install --python /usr/bin/python --target "$vendor" --no-deps \
-    'comfyui-frontend-package==1.45.21' 'comfyui-workflow-templates==0.11.9' \
-    'comfyui-embedded-docs==0.5.8' 'torchsde' 'trampoline' 'einops' \
-    'comfyui-workflow-templates-core==0.3.272' \
-    'comfyui-workflow-templates-json==0.1.6' \
-    'comfy-kitchen==0.2.20' 'comfy-aimdo==0.4.10' 'simpleeval>=1.0.0' \
+    'comfyui-frontend-package==1.48.7' 'comfyui-workflow-templates==0.11.37' \
+    'comfyui-embedded-docs==0.5.9' 'torchsde==0.2.6' 'trampoline==0.1.2' 'einops==0.8.1' \
+    'comfyui-workflow-templates-core==0.3.302' \
+    'comfyui-workflow-templates-json==0.1.37' \
+    'comfy-kitchen==0.2.28' 'comfy-aimdo==0.4.13' 'simpleeval>=1.0.0' \
     'kornia>=0.7.1' 'kornia-rs>=0.1.9' 'spandrel' 'PyOpenGL>=3.1.8' 'comfy-angle' \
-    'transformers' 'tokenizers==0.22.0' 'huggingface_hub'
+    'transformers==5.15.0' 'tokenizers==0.22.0' 'huggingface_hub==1.27.0'
   rm -rf "$vendor/bin" "$vendor/.lock"
+}
+
+check() {
+  local h3_files=(
+    'comfy/ldm/minimax/model.py'
+    'comfy/ldm/minimax/vae.py'
+    'comfy/ldm/minimax/audio_vae.py'
+    'comfy/text_encoders/minimax.py'
+    'comfy_extras/nodes_minimax_h3.py'
+  )
+  local path
+  for path in "${h3_files[@]}"; do
+    [[ -f "$srcdir/ComfyUI/$path" ]] || return 1
+  done
+  [[ -f "$srcdir/python-vendor/comfyui_workflow_templates_json/templates/video_minimax_h3_t2v.json" ]]
+  python -m py_compile "$srcdir/synapse-comfyui-doctor" "$srcdir/comfyui_model_paths.py"
+  bash -n "$srcdir/synapse-comfyui" "$srcdir/synapse-comfyui-models"
 }
 
 package() {
@@ -80,6 +100,9 @@ package() {
     "$pkgdir/usr/share/synapse/comfyui/workflows/z-image-turbo.json"
   install -Dm644 "$srcdir/z-image-turbo-api.json" \
     "$pkgdir/usr/share/synapse/comfyui/workflows/z-image-turbo-api.json"
+  install -Dm644 \
+    "$srcdir/python-vendor/comfyui_workflow_templates_json/templates/video_minimax_h3_t2v.json" \
+    "$pkgdir/usr/share/synapse/comfyui/workflows/minimax-h3-native-t2v.json"
   install -dm755 "$pkgdir/var/lib/synapse/comfyui/models"
   install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 "$srcdir/ComfyUI/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

@@ -1,0 +1,24 @@
+pkgbase = synapse-rocm-runtime
+	pkgdesc = Validated system ROCm and optimized PyTorch runtime for Synapse applications
+	pkgver = 7.2.4
+	pkgrel = 1
+	url = https://github.com/mgiustiniani/CachyOS-PKGBUILDS
+	arch = x86_64
+	license = GPL-3.0-only
+	depends = glibc>=2.44
+	depends = linux-firmware-amdgpu
+	depends = rocm-core>=7.2.4
+	depends = hip-runtime-amd>=7.2.4
+	depends = hsa-rocr>=7.2.4
+	depends = comgr>=2:7.2.4
+	depends = rocminfo>=7.2.4
+	depends = rocm-smi-lib>=7.2.0
+	depends = python
+	depends = python-pytorch-opt-rocm>=2.13.0
+	optdepends = synapse-strixhalo-config: Strix Halo unified-memory kernel tuning
+	source = synapse-rocm-doctor
+	source = README.md
+	sha256sums = cf0316a7572f0dac635585e604f46e836fd5b86c27f746744c6754deb964db81
+	sha256sums = dc06986d19ef387a7abe4e4f1f56604889369c5b60411319e51cfa800c069833
+
+pkgname = synapse-rocm-runtime

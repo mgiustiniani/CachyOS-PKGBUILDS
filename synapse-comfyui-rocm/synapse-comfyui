@@ -20,6 +20,10 @@ if [[ ! -e "$workflow_dir/synapse-z-image-turbo.json" ]]; then
   cp /usr/share/synapse/comfyui/workflows/z-image-turbo.json \
     "$workflow_dir/synapse-z-image-turbo.json"
 fi
+if [[ ! -e "$workflow_dir/synapse-minimax-h3-native-t2v.json" ]]; then
+  cp /usr/share/synapse/comfyui/workflows/minimax-h3-native-t2v.json \
+    "$workflow_dir/synapse-minimax-h3-native-t2v.json"
+fi
 export PYTHONPATH="/usr/lib/synapse-comfyui/python:/usr/lib/synapse-comfyui${PYTHONPATH:+:$PYTHONPATH}"
 export PYTORCH_HIP_ALLOC_CONF=${PYTORCH_HIP_ALLOC_CONF:-expandable_segments:True}
 exec /usr/bin/python /usr/lib/synapse-comfyui/ComfyUI/main.py \
