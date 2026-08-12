@@ -1,7 +1,7 @@
 pkgbase = synapse-ec-su-axb35-linux
-	pkgdesc = AXB35 DKMS driver and unified AXB35/ROG Z13 fan and power control tools
+	pkgdesc = AXB35 DKMS driver and namespaced AXB35/ROG Z13 fan and power control tools
 	pkgver = 1.0.2
-	pkgrel = 3
+	pkgrel = 4
 	url = https://github.com/cmetz/ec-su_axb35-linux
 	install = synapse-ec-su-axb35-linux.install
 	arch = x86_64
@@ -23,8 +23,8 @@ pkgbase = synapse-ec-su-axb35-linux
 	source = dkms.conf
 	source = synapse-ec-su-axb35-linux.install
 	sha256sums = a3a9be9578e911936b07963042b19334e551e75cafb1995f3d0cdda97d4c58a6
-	sha256sums = eadd43ebe657966989fec08d399dde64f52ea60c77bf1d6860d21d0edb8725c4
+	sha256sums = de31d96113a12f7e1eb3b4d8d99348fb15fec8bd5dae6b0cf90b78c1be007093
 	sha256sums = 9ad1574b09a08d680439c0da0e83e964c5e3c543fe886f64e2464246ecc67d8c
-	sha256sums = eb108b982afe68daa9f205923f0e33f0d8442a6948112fcb431a7713163b1f02
+	sha256sums = 9a8d8fe474aa84fb8233a99c0b5c3f3ab3e6903222556585bbb4488ac3f9c6a9
 
 pkgname = synapse-ec-su-axb35-linux

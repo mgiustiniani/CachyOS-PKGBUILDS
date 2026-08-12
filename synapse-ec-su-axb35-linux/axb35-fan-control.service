@@ -6,7 +6,7 @@ After=local-fs.target systemd-modules-load.service power-profiles-daemon.service
 Type=oneshot
 ExecCondition=/bin/sh -c 'grep -qx AXB35-02 /sys/class/dmi/id/board_name 2>/dev/null || grep -Eq "ROG Flow Z13|GZ30[12]" /sys/class/dmi/id/product_name 2>/dev/null'
 ExecStartPre=/bin/sh -c 'if grep -qx AXB35-02 /sys/class/dmi/id/board_name 2>/dev/null; then exec /usr/bin/modprobe ec_su_axb35; fi'
-ExecStart=/usr/bin/axb35-ctl apply
+ExecStart=/usr/bin/synapse-axb35-ctl apply
 TimeoutStartSec=15s
 RemainAfterExit=no
 

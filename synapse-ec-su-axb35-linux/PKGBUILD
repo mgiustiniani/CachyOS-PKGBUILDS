@@ -2,8 +2,8 @@
 
 pkgname=synapse-ec-su-axb35-linux
 pkgver=1.0.2
-pkgrel=3
-pkgdesc='AXB35 DKMS driver and unified AXB35/ROG Z13 fan and power control tools'
+pkgrel=4
+pkgdesc='AXB35 DKMS driver and namespaced AXB35/ROG Z13 fan and power control tools'
 arch=('x86_64')
 license=('GPL-3.0-or-later')
 url='https://github.com/cmetz/ec-su_axb35-linux'
@@ -21,9 +21,9 @@ source=("axb35-tools-${pkgver}.tar.gz"
         'synapse-ec-su-axb35-linux.install')
 install=synapse-ec-su-axb35-linux.install
 sha256sums=('a3a9be9578e911936b07963042b19334e551e75cafb1995f3d0cdda97d4c58a6'
-            'eadd43ebe657966989fec08d399dde64f52ea60c77bf1d6860d21d0edb8725c4'
+            'de31d96113a12f7e1eb3b4d8d99348fb15fec8bd5dae6b0cf90b78c1be007093'
             '9ad1574b09a08d680439c0da0e83e964c5e3c543fe886f64e2464246ecc67d8c'
-            'eb108b982afe68daa9f205923f0e33f0d8442a6948112fcb431a7713163b1f02')
+            '9a8d8fe474aa84fb8233a99c0b5c3f3ab3e6903222556585bbb4488ac3f9c6a9')
 
 build() {
     make -C "$srcdir/axb35-tools-${pkgver}/tools" \
@@ -43,14 +43,24 @@ package() {
     install -Dm644 "$source_root/README.md" "$pkgdir/usr/src/${module_version}/README.md"
     install -Dm644 "$source_root/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 
-    install -Dm755 "$source_root/tools/axb35-ctl" "$pkgdir/usr/bin/axb35-ctl"
-    install -Dm755 "$source_root/tools/axb35-monitor" "$pkgdir/usr/bin/axb35-monitor"
+    # Use Synapse-specific command names. Older releases were commonly
+    # installed manually as unowned /usr/bin/axb35-* files; claiming those
+    # paths makes pacman abort the entire system upgrade before scriptlets run.
+    install -Dm755 "$source_root/tools/axb35-ctl" \
+        "$pkgdir/usr/bin/synapse-axb35-ctl"
+    install -Dm755 "$source_root/tools/axb35-monitor" \
+        "$pkgdir/usr/bin/synapse-axb35-monitor"
 
     for lang in en it fr de es zh; do
         install -Dm644 "$source_root/man/${lang}/axb35-ctl.8" \
-            "$pkgdir/usr/share/man/${lang}/man8/axb35-ctl.8"
+            "$pkgdir/usr/share/man/${lang}/man8/synapse-axb35-ctl.8"
         install -Dm644 "$source_root/man/${lang}/axb35-monitor.8" \
-            "$pkgdir/usr/share/man/${lang}/man8/axb35-monitor.8"
+            "$pkgdir/usr/share/man/${lang}/man8/synapse-axb35-monitor.8"
+        sed -i \
+            -e 's/\<axb35-ctl\>/synapse-axb35-ctl/g' \
+            -e 's/\<axb35-monitor\>/synapse-axb35-monitor/g' \
+            "$pkgdir/usr/share/man/${lang}/man8/synapse-axb35-ctl.8" \
+            "$pkgdir/usr/share/man/${lang}/man8/synapse-axb35-monitor.8"
     done
 
     install -Dm644 "$srcdir/axb35-fan-control.service" \

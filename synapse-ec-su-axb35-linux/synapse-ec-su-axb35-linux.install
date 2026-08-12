@@ -5,6 +5,10 @@ pre_install() {
 post_install() {
     echo "synapse-ec-su-axb35-linux: DKMS module and C tools installed."
     echo "DKMS builds ec_su_axb35 for each installed kernel."
+    echo "Commands: synapse-axb35-ctl and synapse-axb35-monitor"
+    if [ -e /usr/bin/axb35-ctl ] || [ -e /usr/bin/axb35-monitor ]; then
+        echo "Note: legacy unowned /usr/bin/axb35-* files were left untouched."
+    fi
 
     depmod -a
     systemctl daemon-reload
